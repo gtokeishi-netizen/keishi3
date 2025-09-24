@@ -262,6 +262,11 @@ class GI_AI_Admin_Interface {
                 
                 <!-- 実行ボタン -->
                 <div class="gi-ai-actions">
+                    <button type="button" id="gi-ai-test-btn" class="button" style="margin-bottom: 10px;">
+                        <span class="dashicons dashicons-networking"></span>
+                        接続テスト
+                    </button>
+                    
                     <button type="button" id="gi-ai-execute-btn" class="button button-primary button-large">
                         <span class="dashicons dashicons-admin-generic"></span>
                         AI自動入力を実行
@@ -729,6 +734,22 @@ class GI_AI_Admin_Interface {
         <script type="text/javascript">
         jQuery(document).ready(function($) {
             
+            // 必要な変数が存在しない場合のフォールバック
+            if (typeof gi_ai_ajax === 'undefined') {
+                window.gi_ai_ajax = {
+                    ajax_url: '<?php echo admin_url('admin-ajax.php'); ?>',
+                    nonce: '<?php echo wp_create_nonce('gi_ai_auto_fill_nonce'); ?>',
+                    strings: {
+                        processing: 'AI処理中...',
+                        completed: '処理完了',
+                        error: 'エラーが発生しました',
+                        confirm_process: 'AI自動入力を実行しますか？',
+                        confirm_rollback: 'ロールバックを実行しますか？すべての変更が元に戻ります。',
+                        no_fields_selected: '処理対象のフィールドを選択してください'
+                    }
+                };
+            }
+            
             // AI自動入力の実行
             $('#gi-ai-execute-btn').on('click', function() {
                 var selectedFields = [];
@@ -737,11 +758,11 @@ class GI_AI_Admin_Interface {
                 });
                 
                 if (selectedFields.length === 0) {
-                    alert(gi_ai_ajax.strings.no_fields_selected);
+                    alert(gi_ai_ajax.strings.no_fields_selected || '処理対象のフィールドを選択してください');
                     return;
                 }
                 
-                if (!confirm(gi_ai_ajax.strings.confirm_process)) {
+                if (!confirm(gi_ai_ajax.strings.confirm_process || 'AI自動入力を実行しますか？')) {
                     return;
                 }
                 
@@ -750,6 +771,7 @@ class GI_AI_Admin_Interface {
             
             // AI処理の実行
             function executeAIProcess(fields) {
+                console.log('AI処理開始:', fields);
                 $('#gi-ai-progress').removeClass('hidden');
                 $('#gi-ai-execute-btn').prop('disabled', true);
                 
@@ -760,27 +782,75 @@ class GI_AI_Admin_Interface {
                     target_fields: fields
                 };
                 
-                $.post(gi_ai_ajax.ajax_url, data, function(response) {
-                    $('#gi-ai-progress').addClass('hidden');
-                    $('#gi-ai-execute-btn').prop('disabled', false);
-                    
-                    if (response.success) {
-                        showSuccessMessage('処理が完了しました。' + response.data.updated_fields.length + '件のフィールドを更新しました。');
+                console.log('送信データ:', data);
+                
+                $.ajax({
+                    url: gi_ai_ajax.ajax_url,
+                    type: 'POST',
+                    data: data,
+                    dataType: 'json',
+                    timeout: 60000, // 60秒タイムアウト
+                    success: function(response) {
+                        console.log('レスポンス受信:', response);
+                        $('#gi-ai-progress').addClass('hidden');
+                        $('#gi-ai-execute-btn').prop('disabled', false);
                         
-                        // プレビューモードの場合
-                        if ($('#gi-ai-preview-mode').is(':checked')) {
-                            showPreview(response.data.updated_fields);
+                        if (response && response.success) {
+                            var message = '処理が完了しました。';
+                            if (response.data && response.data.updated_fields) {
+                                message += response.data.updated_fields.length + '件のフィールドを更新しました。';
+                            }
+                            showSuccessMessage(message);
+                            
+                            // プレビューモードの場合
+                            if ($('#gi-ai-preview-mode').is(':checked')) {
+                                showPreview(response.data.updated_fields);
+                            } else {
+                                // ページをリロードしてフィールドの更新を反映
+                                setTimeout(function() {
+                                    location.reload();
+                                }, 1500);
+                            }
                         } else {
-                            // ページをリロードしてフィールドの更新を反映
-                            location.reload();
+                            var errorMsg = 'エラー: ';
+                            if (response && response.data) {
+                                errorMsg += response.data;
+                            } else {
+                                errorMsg += '不明なエラーが発生しました';
+                            }
+                            showErrorMessage(errorMsg);
                         }
-                    } else {
-                        showErrorMessage('エラー: ' + response.data);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('AJAX エラー:', {
+                            xhr: xhr,
+                            status: status,
+                            error: error,
+                            responseText: xhr.responseText
+                        });
+                        
+                        $('#gi-ai-progress').addClass('hidden');
+                        $('#gi-ai-execute-btn').prop('disabled', false);
+                        
+                        var errorMessage = '通信エラーが発生しました: ';
+                        if (status === 'timeout') {
+                            errorMessage += 'タイムアウト (処理に時間がかかりすぎています)';
+                        } else if (status === 'error') {
+                            errorMessage += 'サーバーエラー';
+                            if (xhr.status) {
+                                errorMessage += ' (HTTP ' + xhr.status + ')';
+                            }
+                        } else {
+                            errorMessage += status + ' - ' + error;
+                        }
+                        
+                        if (xhr.responseText) {
+                            console.log('サーバーレスポンス:', xhr.responseText);
+                            errorMessage += '\n詳細: ' + xhr.responseText.substring(0, 200);
+                        }
+                        
+                        showErrorMessage(errorMessage);
                     }
-                }).fail(function() {
-                    $('#gi-ai-progress').addClass('hidden');
-                    $('#gi-ai-execute-btn').prop('disabled', false);
-                    showErrorMessage('通信エラーが発生しました。');
                 });
             }
             
@@ -826,6 +896,33 @@ class GI_AI_Admin_Interface {
                         }, 1500);
                     } else {
                         showErrorMessage('ロールバックに失敗しました: ' + response.data);
+                    }
+                });
+            });
+            
+            // 接続テストボタン
+            $('#gi-ai-test-btn').on('click', function() {
+                $(this).prop('disabled', true).text('テスト中...');
+                
+                $.ajax({
+                    url: gi_ai_ajax.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'gi_ai_test_connection',
+                        nonce: gi_ai_ajax.nonce
+                    },
+                    success: function(response) {
+                        $('#gi-ai-test-btn').prop('disabled', false).text('接続テスト');
+                        if (response.success) {
+                            showSuccessMessage('接続テスト成功: ' + (response.data || 'API接続正常'));
+                        } else {
+                            showErrorMessage('接続テスト失敗: ' + (response.data || '不明なエラー'));
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#gi-ai-test-btn').prop('disabled', false).text('接続テスト');
+                        showErrorMessage('接続テストエラー: ' + status + ' - ' + error);
+                        console.error('Test error:', xhr.responseText);
                     }
                 });
             });

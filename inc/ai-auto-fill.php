@@ -25,11 +25,15 @@ class GI_AI_Auto_Fill {
     public function __construct() {
         $this->api_handler = new GI_AI_API_Handler();
         
-        // フックの登録
+        // フックの登録（ログイン済みユーザー用）
         add_action('wp_ajax_gi_ai_auto_fill', array($this, 'process_auto_fill'));
         add_action('wp_ajax_gi_ai_batch_process', array($this, 'process_batch_auto_fill'));
         add_action('wp_ajax_gi_ai_get_progress', array($this, 'get_progress_status'));
         add_action('wp_ajax_gi_ai_rollback', array($this, 'process_rollback'));
+        add_action('wp_ajax_gi_ai_test_connection', array($this, 'test_connection_ajax'));
+        
+        // 非ログインユーザー用フック（管理画面では不要だが、念のため）
+        add_action('wp_ajax_nopriv_gi_ai_auto_fill', array($this, 'handle_non_logged_in_request'));
         add_action('admin_enqueue_scripts', array($this, 'enqueue_scripts'));
         add_action('admin_init', array($this, 'init_database'));
         add_action('wp_loaded', array($this, 'check_daily_limit_reset'));
@@ -208,49 +212,85 @@ class GI_AI_Auto_Fill {
      */
     public function process_auto_fill() {
         try {
+            // デバッグ情報の出力
+            error_log('AI Auto Fill: process_auto_fill started');
+            error_log('POST data: ' . print_r($_POST, true));
+            
+            // POSTデータの存在確認
+            if (empty($_POST)) {
+                error_log('AI Auto Fill: No POST data received');
+                wp_send_json_error('POSTデータが受信されていません');
+            }
+            
             // nonce検証
-            if (!wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
-                wp_die('セキュリティチェックに失敗しました');
+            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
+                error_log('AI Auto Fill: Nonce verification failed');
+                wp_send_json_error('セキュリティチェックに失敗しました');
             }
             
             // 権限チェック
             if (!current_user_can('edit_posts')) {
+                error_log('AI Auto Fill: Permission denied for user ' . get_current_user_id());
                 wp_send_json_error('権限がありません');
             }
             
-            $post_id = intval($_POST['post_id']);
+            // パラメータ取得
+            $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
             $target_fields = isset($_POST['target_fields']) ? $_POST['target_fields'] : array();
+            
+            error_log('AI Auto Fill: Processing post_id=' . $post_id . ', fields=' . print_r($target_fields, true));
+            
+            // 投稿IDチェック
+            if (!$post_id) {
+                wp_send_json_error('投稿IDが無効です');
+            }
             
             // 投稿の存在確認
             $post = get_post($post_id);
             if (!$post) {
-                wp_send_json_error('指定された投稿が見つかりません');
+                error_log('AI Auto Fill: Post not found: ' . $post_id);
+                wp_send_json_error('指定された投稿が見つかりません (ID: ' . $post_id . ')');
             }
             
             // 投稿タイプ確認
             if ($post->post_type !== 'grant') {
-                wp_send_json_error('対象外の投稿タイプです');
+                error_log('AI Auto Fill: Invalid post type: ' . $post->post_type);
+                wp_send_json_error('対象外の投稿タイプです: ' . $post->post_type);
             }
             
             // 下書き状態の確認
             if ($post->post_status !== 'draft') {
-                wp_send_json_error('下書き状態の投稿のみ処理可能です');
+                error_log('AI Auto Fill: Invalid post status: ' . $post->post_status);
+                wp_send_json_error('下書き状態の投稿のみ処理可能です (現在: ' . $post->post_status . ')');
             }
-            
-            // 日次制限チェックを無効化
-            // if (!$this->check_daily_limit()) {
-            //     wp_send_json_error('本日の利用上限に達しました');
-            // }
             
             // フィールド選択チェック
             if (empty($target_fields) || !is_array($target_fields)) {
+                error_log('AI Auto Fill: No fields selected');
                 wp_send_json_error('処理対象のフィールドを選択してください');
             }
             
+            // APIハンドラーの存在確認
+            if (!$this->api_handler) {
+                error_log('AI Auto Fill: API handler not initialized');
+                wp_send_json_error('AI APIハンドラーが初期化されていません');
+            }
+            
+            // APIキーの確認
+            $api_key = get_option('gi_openai_api_key');
+            $encrypted_api_key = get_option('gi_openai_api_key_encrypted');
+            if (empty($api_key) && empty($encrypted_api_key)) {
+                error_log('AI Auto Fill: API key not configured');
+                wp_send_json_error('OpenAI APIキーが設定されていません。設定画面で APIキーを入力してください。');
+            }
+            
             // AI処理実行
+            error_log('AI Auto Fill: Starting AI processing');
             $start_time = microtime(true);
             $result = $this->execute_ai_fill($post_id, $target_fields);
             $processing_time = microtime(true) - $start_time;
+            
+            error_log('AI Auto Fill: Processing completed. Result: ' . print_r($result, true));
             
             if ($result['success']) {
                 // 使用ログの記録
@@ -264,13 +304,73 @@ class GI_AI_Auto_Fill {
                 ));
             } else {
                 // エラーログの記録
+                error_log('AI Auto Fill: Processing failed: ' . $result['message']);
                 $this->log_usage($post_id, $target_fields, $result, $processing_time);
-                wp_send_json_error($result['message']);
+                wp_send_json_error($result['message'] . ' (詳細: ' . print_r($result['errors'], true) . ')');
             }
             
         } catch (Exception $e) {
-            error_log('GI AI Auto Fill Error: ' . $e->getMessage());
-            wp_send_json_error('予期しないエラーが発生しました');
+            error_log('GI AI Auto Fill Exception: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+            error_log('Stack trace: ' . $e->getTraceAsString());
+            wp_send_json_error('予期しないエラーが発生しました: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 非ログインユーザーのリクエスト処理
+     */
+    public function handle_non_logged_in_request() {
+        wp_send_json_error('ログインが必要です');
+    }
+    
+    /**
+     * AJAX 接続テスト
+     */
+    public function test_connection_ajax() {
+        try {
+            if (!wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
+                wp_send_json_error('セキュリティチェックに失敗しました');
+            }
+            
+            if (!current_user_can('edit_posts')) {
+                wp_send_json_error('権限がありません');
+            }
+            
+            // 基本チェック
+            $checks = array();
+            
+            // APIハンドラーチェック
+            if ($this->api_handler) {
+                $checks[] = 'APIハンドラー: OK';
+            } else {
+                $checks[] = 'APIハンドラー: エラー';
+                wp_send_json_error('APIハンドラーが初期化されていません');
+            }
+            
+            // APIキーチェック
+            $api_key = get_option('gi_openai_api_key');
+            $encrypted_api_key = get_option('gi_openai_api_key_encrypted');
+            
+            if (!empty($api_key) || !empty($encrypted_api_key)) {
+                $checks[] = 'APIキー: 設定済み';
+            } else {
+                $checks[] = 'APIキー: 未設定';
+                wp_send_json_error('APIキーが設定されていません');
+            }
+            
+            // 実際のAPI接続テスト
+            $test_result = $this->api_handler->test_connection();
+            if ($test_result['success']) {
+                $checks[] = 'API接続: 成功';
+                wp_send_json_success(implode(', ', $checks));
+            } else {
+                $checks[] = 'API接続: 失敗 - ' . $test_result['message'];
+                wp_send_json_error(implode(', ', $checks));
+            }
+            
+        } catch (Exception $e) {
+            error_log('Test connection error: ' . $e->getMessage());
+            wp_send_json_error('テスト中にエラーが発生しました: ' . $e->getMessage());
         }
     }
     
