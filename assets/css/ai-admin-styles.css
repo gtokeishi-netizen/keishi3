@@ -1,0 +1,939 @@
+/**
+ * Grant Insight Perfect AI自動入力機能 - 管理画面CSS
+ * 
+ * @package Grant_Insight_Perfect
+ * @version 1.0.0
+ * @since 2024.12
+ */
+
+/* ======================================
+   AI自動入力 メタボックス基本スタイル
+   ====================================== */
+
+#gi-ai-auto-fill-container {
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+/* 利用状況表示 */
+.gi-ai-usage-status {
+    margin-bottom: 20px;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 1px solid #e1e1e1;
+    border-radius: 6px;
+}
+
+.gi-ai-usage-status h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #23282d;
+}
+
+.gi-ai-usage-bar {
+    width: 100%;
+    height: 10px;
+    background: #e1e1e1;
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 8px;
+    position: relative;
+}
+
+.gi-ai-usage-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00a32a 0%, #ffb900 70%, #d63638 100%);
+    transition: width 0.3s ease;
+    border-radius: 5px;
+}
+
+.gi-ai-usage-text {
+    margin: 0;
+    font-size: 12px;
+    color: #666;
+    text-align: center;
+}
+
+/* ======================================
+   優先度セクション
+   ====================================== */
+
+.gi-ai-priority-sections {
+    margin-bottom: 20px;
+}
+
+.gi-ai-priority-section {
+    margin-bottom: 16px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.gi-ai-priority-title {
+    margin: 0;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    background: #f1f1f1;
+    border-bottom: 1px solid #ddd;
+}
+
+.priority-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 11px;
+    color: white;
+    font-size: 10px;
+    font-weight: bold;
+    margin-right: 8px;
+    text-transform: uppercase;
+}
+
+.priority-badge.high { 
+    background: #d63638; 
+}
+
+.priority-badge.medium { 
+    background: #ffb900; 
+    color: #333;
+}
+
+.priority-badge.low { 
+    background: #00a32a; 
+}
+
+/* ======================================
+   フィールド選択
+   ====================================== */
+
+.gi-ai-field-item {
+    margin: 0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.gi-ai-field-item:last-child {
+    border-bottom: none;
+}
+
+.gi-ai-field-label {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    margin: 0;
+}
+
+.gi-ai-field-label:hover {
+    background: #f8f9ff;
+}
+
+.gi-ai-field-label.has-content {
+    background: #f0f6fc;
+    opacity: 0.7;
+}
+
+.gi-ai-field-checkbox {
+    margin: 0 10px 0 0 !important;
+    flex-shrink: 0;
+}
+
+.field-name {
+    flex: 1;
+    font-weight: 500;
+    color: #23282d;
+}
+
+.field-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    margin-left: 8px;
+    font-weight: 500;
+}
+
+.field-status.filled {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.field-status.empty {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.field-limit {
+    font-size: 10px;
+    color: #666;
+    margin-left: 8px;
+    font-style: italic;
+}
+
+.gi-ai-field-description {
+    font-size: 11px;
+    color: #666;
+    margin: 4px 0 0 34px;
+    line-height: 1.3;
+    padding-bottom: 4px;
+}
+
+/* ======================================
+   一括選択ボタン
+   ====================================== */
+
+.gi-ai-bulk-select {
+    margin: 15px 0;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.gi-ai-bulk-select .button {
+    margin: 0 3px;
+    font-size: 12px;
+    padding: 4px 10px;
+    height: auto;
+}
+
+/* ======================================
+   処理オプション
+   ====================================== */
+
+.gi-ai-options {
+    margin: 20px 0;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 1px solid #e1e1e1;
+    border-radius: 4px;
+}
+
+.gi-ai-options h4 {
+    margin: 0 0 12px 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.gi-ai-option {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 12px;
+}
+
+.gi-ai-option input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+/* ======================================
+   実行・進捗セクション
+   ====================================== */
+
+.gi-ai-actions {
+    margin-top: 20px;
+}
+
+#gi-ai-execute-btn {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #0073aa;
+    border-color: #0073aa;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+}
+
+#gi-ai-execute-btn:hover {
+    background: #005177;
+    border-color: #005177;
+}
+
+#gi-ai-execute-btn:disabled {
+    background: #ccc;
+    border-color: #ccc;
+    cursor: not-allowed;
+}
+
+#gi-ai-execute-btn .dashicons {
+    margin-right: 6px;
+    font-size: 16px;
+}
+
+.gi-ai-progress {
+    margin-top: 16px;
+    padding: 16px;
+    background: #e7f3ff;
+    border: 1px solid #0073aa;
+    border-radius: 4px;
+}
+
+.gi-ai-progress-bar {
+    width: 100%;
+    height: 24px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 12px;
+    position: relative;
+}
+
+.gi-ai-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0073aa, #005177);
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 12px;
+}
+
+.gi-ai-progress-text {
+    margin: 0 0 12px 0;
+    font-weight: 600;
+    text-align: center;
+    color: #0073aa;
+}
+
+#gi-ai-cancel-btn {
+    display: block;
+    margin: 0 auto;
+    background: #dc3545;
+    border-color: #dc3545;
+    color: white;
+}
+
+#gi-ai-cancel-btn:hover {
+    background: #c82333;
+    border-color: #c82333;
+}
+
+/* ======================================
+   ロールバック機能
+   ====================================== */
+
+.gi-ai-rollback {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #ddd;
+}
+
+.gi-ai-rollback h4 {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.gi-ai-rollback .description {
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #666;
+    line-height: 1.4;
+}
+
+#gi-ai-rollback-btn {
+    background: #6c757d;
+    border-color: #6c757d;
+    color: white;
+}
+
+#gi-ai-rollback-btn:hover {
+    background: #545b62;
+    border-color: #545b62;
+}
+
+#gi-ai-rollback-btn .dashicons {
+    margin-right: 5px;
+}
+
+/* ======================================
+   プレビューメタボックス
+   ====================================== */
+
+.gi-ai-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid #0073aa;
+}
+
+.gi-ai-preview-header h4 {
+    margin: 0;
+    font-size: 16px;
+    color: #0073aa;
+}
+
+.gi-ai-preview-actions .button {
+    margin-left: 8px;
+}
+
+.gi-ai-preview-field {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.gi-ai-preview-field-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #eee;
+}
+
+.gi-ai-preview-field-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #23282d;
+}
+
+.gi-ai-char-count {
+    font-size: 12px;
+    color: #666;
+    margin-left: 8px;
+}
+
+.gi-ai-char-count.over-limit {
+    color: #d63638;
+    font-weight: bold;
+}
+
+.gi-ai-preview-actions .button {
+    font-size: 11px;
+    padding: 4px 8px;
+    height: auto;
+    margin-left: 4px;
+}
+
+.gi-ai-current-value,
+.gi-ai-generated-value {
+    margin-bottom: 16px;
+}
+
+.gi-ai-current-value h6,
+.gi-ai-generated-value h6 {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.gi-ai-current-content,
+.gi-ai-generated-content {
+    padding: 12px;
+    background: #f8f9fa;
+    border: 1px solid #e1e1e1;
+    border-radius: 4px;
+    min-height: 40px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.gi-ai-generated-content.edit-mode {
+    background: #fff5f5;
+    border-color: #ffc107;
+}
+
+.gi-ai-textarea-content {
+    width: 100%;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px;
+    font-size: 13px;
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+}
+
+.gi-ai-wysiwyg-content.editable {
+    border: 1px dashed #0073aa;
+    outline: none;
+}
+
+.gi-ai-edit-complete-btn {
+    margin-top: 8px;
+    background: #28a745;
+    border-color: #28a745;
+    color: white;
+}
+
+/* ======================================
+   バッチ処理ページ
+   ====================================== */
+
+.gi-ai-batch-posts,
+.gi-ai-batch-fields,
+.gi-ai-batch-options {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.gi-ai-batch-controls {
+    margin-bottom: 16px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.gi-ai-selection-count {
+    margin-left: auto;
+    font-weight: 600;
+    color: #0073aa;
+}
+
+.gi-ai-posts-list {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 12px;
+    background: #fafafa;
+}
+
+.gi-ai-post-item {
+    margin-bottom: 8px;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #e1e1e1;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+.gi-ai-post-item:hover {
+    background: #f8f9ff;
+}
+
+.gi-ai-post-item label {
+    cursor: pointer;
+    display: block;
+    font-weight: 500;
+}
+
+.gi-ai-post-meta {
+    font-size: 12px;
+    color: #666;
+    margin-left: 24px;
+    margin-top: 4px;
+}
+
+.gi-ai-field-group {
+    margin-bottom: 20px;
+}
+
+.gi-ai-group-title {
+    margin-bottom: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 8px 0;
+    border-bottom: 1px solid #ddd;
+}
+
+.gi-ai-field-list {
+    margin-left: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px;
+}
+
+.gi-ai-batch-field-label {
+    display: block;
+    padding: 8px 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.gi-ai-batch-field-label:hover {
+    background: #f0f8ff;
+    border-color: #0073aa;
+}
+
+.gi-ai-batch-field-label input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.gi-ai-batch-option {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 13px;
+}
+
+.gi-ai-batch-option input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+.gi-ai-batch-execute {
+    text-align: center;
+    margin-top: 30px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+#gi-ai-batch-execute-btn {
+    padding: 16px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    min-width: 200px;
+}
+
+/* ======================================
+   バッチ進捗表示
+   ====================================== */
+
+.gi-ai-batch-progress {
+    margin-top: 20px;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.gi-ai-progress-info {
+    margin-bottom: 20px;
+}
+
+.gi-ai-progress-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.gi-ai-progress-bar {
+    flex: 1;
+    height: 20px;
+    background: #e1e1e1;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.gi-ai-progress-percentage {
+    font-weight: 600;
+    color: #0073aa;
+    min-width: 40px;
+}
+
+.gi-ai-progress-details {
+    font-size: 14px;
+    color: #666;
+    text-align: center;
+}
+
+.gi-ai-progress-log h3 {
+    margin: 0 0 12px 0;
+    font-size: 14px;
+}
+
+.gi-ai-progress-log-content {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 12px;
+    background: #fafafa;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.gi-ai-log-entry {
+    margin-bottom: 8px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    display: flex;
+    gap: 8px;
+}
+
+.gi-ai-log-entry.success {
+    background: #d1e7dd;
+    color: #0f5132;
+}
+
+.gi-ai-log-entry.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.gi-ai-log-time {
+    font-weight: bold;
+    min-width: 80px;
+}
+
+.gi-ai-log-post {
+    min-width: 80px;
+}
+
+.gi-ai-log-status {
+    min-width: 40px;
+    font-weight: bold;
+}
+
+.gi-ai-log-details {
+    flex: 1;
+    word-break: break-all;
+}
+
+.gi-ai-progress-actions {
+    margin-top: 16px;
+    text-align: center;
+}
+
+.gi-ai-progress-actions .button {
+    margin: 0 8px;
+}
+
+/* ======================================
+   結果表示
+   ====================================== */
+
+.gi-ai-batch-results {
+    margin-top: 20px;
+    padding: 20px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+}
+
+.gi-ai-batch-summary {
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.gi-ai-result-chart {
+    width: 100%;
+    height: 20px;
+    background: #e1e1e1;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 8px;
+}
+
+.gi-ai-success-bar {
+    height: 100%;
+    background: #28a745;
+    border-radius: 10px;
+    transition: width 0.3s ease;
+}
+
+.gi-ai-batch-details table {
+    width: 100%;
+    margin-top: 16px;
+}
+
+.gi-ai-batch-details tr.success {
+    background: #d1e7dd;
+}
+
+.gi-ai-batch-details tr.error {
+    background: #f8d7da;
+}
+
+/* ======================================
+   通知システム
+   ====================================== */
+
+.gi-ai-notification {
+    position: fixed;
+    top: 32px;
+    right: 20px;
+    max-width: 400px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.gi-ai-notification-success {
+    background: #d1e7dd;
+    border-left: 4px solid #28a745;
+    color: #0f5132;
+}
+
+.gi-ai-notification-error {
+    background: #f8d7da;
+    border-left: 4px solid #dc3545;
+    color: #721c24;
+}
+
+.gi-ai-notification-warning {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    color: #856404;
+}
+
+.gi-ai-notification-info {
+    background: #d1ecf1;
+    border-left: 4px solid #17a2b8;
+    color: #0c5460;
+}
+
+.gi-ai-notification-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0;
+    margin-left: auto;
+    opacity: 0.7;
+}
+
+.gi-ai-notification-close:hover {
+    opacity: 1;
+}
+
+/* ======================================
+   ツールチップ
+   ====================================== */
+
+.gi-ai-tooltip {
+    position: absolute;
+    z-index: 100001;
+    padding: 6px 8px;
+    background: #333;
+    color: white;
+    font-size: 11px;
+    border-radius: 3px;
+    max-width: 250px;
+    word-wrap: break-word;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* ======================================
+   レスポンシブ対応
+   ====================================== */
+
+@media (max-width: 782px) {
+    .gi-ai-field-list {
+        grid-template-columns: 1fr;
+    }
+    
+    .gi-ai-preview-field-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .gi-ai-preview-actions {
+        margin-top: 10px;
+    }
+    
+    .gi-ai-batch-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .gi-ai-selection-count {
+        margin-left: 0;
+        text-align: center;
+    }
+    
+    .gi-ai-notification {
+        right: 10px;
+        left: 10px;
+        max-width: none;
+    }
+    
+    #gi-ai-execute-btn,
+    #gi-ai-batch-execute-btn {
+        font-size: 13px;
+        padding: 10px 16px;
+    }
+}
+
+/* ======================================
+   隠し状態クラス
+   ====================================== */
+
+.hidden {
+    display: none !important;
+}
+
+/* ======================================
+   アニメーション
+   ====================================== */
+
+.gi-ai-field-item,
+.gi-ai-preview-field {
+    transition: all 0.2s ease;
+}
+
+.gi-ai-field-item:hover {
+    transform: translateX(2px);
+}
+
+.gi-ai-progress-bar,
+.gi-ai-usage-bar {
+    position: relative;
+    overflow: hidden;
+}
+
+.gi-ai-progress-fill,
+.gi-ai-usage-fill {
+    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ======================================
+   アクセシビリティ対応
+   ====================================== */
+
+.gi-ai-field-checkbox:focus + .field-name,
+.gi-ai-batch-field-label:focus-within {
+    outline: 2px solid #0073aa;
+    outline-offset: 1px;
+}
+
+.gi-ai-notification[role="alert"] {
+    /* スクリーンリーダー対応 */
+}
+
+/* ======================================
+   印刷スタイル
+   ====================================== */
+
+@media print {
+    .gi-ai-notification,
+    .gi-ai-progress,
+    .gi-ai-actions,
+    .gi-ai-preview-actions {
+        display: none;
+    }
+    
+    .gi-ai-preview-field {
+        border: 1px solid #000;
+        break-inside: avoid;
+    }
+}

@@ -26,7 +26,7 @@ class GI_AI_API_Handler {
      * コンストラクタ
      */
     public function __construct() {
-        $this->api_key = get_option('gi_openai_api_key');
+        $this->api_key = $this->get_decrypted_api_key();
         $this->max_tokens = get_option('gi_ai_max_tokens', 1000);
         $this->temperature = get_option('gi_ai_temperature', 0.7);
         $this->retry_count = get_option('gi_ai_retry_count', 3);
@@ -52,6 +52,81 @@ class GI_AI_API_Handler {
             </p>
         </div>
         <?php
+    }
+    
+    /**
+     * APIキーの暗号化保存
+     * 
+     * @param string $api_key 暗号化するAPIキー
+     * @return bool 保存成功/失敗
+     */
+    public static function save_encrypted_api_key($api_key) {
+        if (empty($api_key)) {
+            return delete_option('gi_openai_api_key_encrypted');
+        }
+        
+        $salt = wp_salt('secure_auth');
+        $iv = substr(hash('sha256', $salt), 0, 16);
+        
+        $encrypted = openssl_encrypt(
+            $api_key, 
+            'AES-256-CBC', 
+            $salt, 
+            0, 
+            $iv
+        );
+        
+        if ($encrypted === false) {
+            return false;
+        }
+        
+        return update_option('gi_openai_api_key_encrypted', base64_encode($encrypted));
+    }
+    
+    /**
+     * APIキーの復号化取得
+     * 
+     * @return string|false 復号化されたAPIキーまたはfalse
+     */
+    private function get_decrypted_api_key() {
+        $encrypted = get_option('gi_openai_api_key_encrypted');
+        
+        if (empty($encrypted)) {
+            // 旧形式のAPIキーをチェック（後方互換性）
+            return get_option('gi_openai_api_key', '');
+        }
+        
+        $salt = wp_salt('secure_auth');
+        $iv = substr(hash('sha256', $salt), 0, 16);
+        
+        $decrypted = openssl_decrypt(
+            base64_decode($encrypted), 
+            'AES-256-CBC', 
+            $salt, 
+            0, 
+            $iv
+        );
+        
+        return $decrypted;
+    }
+    
+    /**
+     * APIキーの表示用マスク（最後の4文字のみ表示）
+     * 
+     * @return string マスクされたAPIキー
+     */
+    public static function get_masked_api_key() {
+        $api_key = (new self())->get_decrypted_api_key();
+        
+        if (empty($api_key)) {
+            return '';
+        }
+        
+        if (strlen($api_key) <= 4) {
+            return str_repeat('*', strlen($api_key));
+        }
+        
+        return str_repeat('*', strlen($api_key) - 4) . substr($api_key, -4);
     }
     
     /**

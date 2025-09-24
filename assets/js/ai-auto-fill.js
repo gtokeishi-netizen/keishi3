@@ -1147,18 +1147,77 @@
      * 初期化
      */
     $(document).ready(function() {
-        // メインクラスのインスタンス化
-        window.GI_AI_AutoFill = new GI_AI_AutoFill();
-        
-        // ユーティリティをグローバルに
-        window.GI_AI_Utils = GI_AI_Utils;
-        
-        // デバッグ情報
-        if (typeof gi_ai_ajax !== 'undefined' && gi_ai_ajax.debug) {
-            console.log('[GI AI] JavaScript initialized', {
+        try {
+            // 必要な要素の存在チェック
+            if (typeof gi_ai_ajax === 'undefined') {
+                console.error('[GI AI] Ajax configuration not loaded');
+                return;
+            }
+
+            // メインクラスのインスタンス化
+            window.GI_AI_AutoFill = new GI_AI_AutoFill();
+            
+            // ユーティリティをグローバルに
+            window.GI_AI_Utils = GI_AI_Utils;
+            
+            // 初期化完了の通知
+            console.log('[GI AI] JavaScript initialized successfully', {
                 version: '1.0.0',
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                ajax_url: gi_ai_ajax.ajax_url,
+                daily_usage: gi_ai_ajax.daily_usage,
+                daily_limit: gi_ai_ajax.daily_limit,
+                debug_mode: gi_ai_ajax.debug
             });
+
+            // DOM要素の確認
+            const elements = {
+                execute_btn: $('#gi-ai-execute-btn').length,
+                field_checkboxes: $('.gi-ai-field-checkbox').length,
+                progress_container: $('#gi-ai-progress').length,
+                preview_container: $('#gi-ai-preview-container').length
+            };
+
+            console.log('[GI AI] DOM elements found:', elements);
+
+            // 初期化完了のカスタムイベント発火
+            $(document).trigger('gi-ai-initialized', {
+                version: '1.0.0',
+                elements: elements,
+                config: gi_ai_ajax
+            });
+
+        } catch (error) {
+            console.error('[GI AI] Initialization error:', error);
+            
+            // エラー通知を表示
+            if (typeof GI_AI_AutoFill !== 'undefined' && window.GI_AI_AutoFill) {
+                window.GI_AI_AutoFill.showNotification(
+                    'AI自動入力機能の初期化でエラーが発生しました: ' + error.message,
+                    'error'
+                );
+            }
+        }
+    });
+
+    // ウィンドウロード後の追加チェック
+    $(window).on('load', function() {
+        if (typeof gi_ai_ajax !== 'undefined' && gi_ai_ajax.debug) {
+            console.log('[GI AI] Window loaded, performing additional checks...');
+            
+            // ACF（Advanced Custom Fields）の存在確認
+            if (typeof acf !== 'undefined') {
+                console.log('[GI AI] ACF detected, version:', acf.get('version') || 'unknown');
+            } else {
+                console.warn('[GI AI] ACF not detected - some features may not work properly');
+            }
+            
+            // WordPress管理画面APIの存在確認
+            if (typeof wp !== 'undefined' && typeof wp.ajax !== 'undefined') {
+                console.log('[GI AI] WordPress AJAX API detected');
+            } else {
+                console.warn('[GI AI] WordPress AJAX API not detected');
+            }
         }
     });
 

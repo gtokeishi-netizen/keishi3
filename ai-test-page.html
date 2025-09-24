@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI自動入力機能テスト</title>
+    <link rel="stylesheet" href="./assets/css/ai-admin-styles.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 20px;
+            background: #f1f1f1;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        .test-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .test-pass { background: #d1e7dd; color: #0f5132; }
+        .test-fail { background: #f8d7da; color: #721c24; }
+        .test-pending { background: #fff3cd; color: #856404; }
+        
+        .mock-metabox {
+            border: 1px solid #ccd0d4;
+            background: #fff;
+            margin: 20px 0;
+        }
+        .mock-metabox-header {
+            background: #f1f1f1;
+            border-bottom: 1px solid #ccd0d4;
+            padding: 12px 16px;
+            font-weight: 600;
+        }
+        .mock-metabox-content {
+            padding: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🤖 AI自動入力機能テスト</h1>
+        <p>Grant Insight Perfect AI自動入力機能のテスト環境です。</p>
+        
+        <!-- CSS読み込みテスト -->
+        <div class="test-section">
+            <h2>1. CSS読み込みテスト <span id="css-test-status" class="test-status test-pending">テスト中</span></h2>
+            <p>AI管理画面用CSSが正しく読み込まれているかテストします。</p>
+            
+            <!-- 利用状況表示のテスト -->
+            <div class="gi-ai-usage-status">
+                <h4>本日の利用状況（サンプル）</h4>
+                <div class="gi-ai-usage-bar">
+                    <div class="gi-ai-usage-fill" style="width: 35%"></div>
+                </div>
+                <p class="gi-ai-usage-text">35 / 100 回使用 (35%)</p>
+            </div>
+            
+            <!-- フィールド選択のテスト -->
+            <div class="gi-ai-priority-section">
+                <h5 class="gi-ai-priority-title high">
+                    <span class="priority-badge high">高</span>
+                    重要フィールド（サンプル）
+                </h5>
+                <div class="gi-ai-field-item">
+                    <label class="gi-ai-field-label">
+                        <input type="checkbox" class="gi-ai-field-checkbox" checked>
+                        <span class="field-name">AI概要</span>
+                        <span class="field-status empty">未入力</span>
+                        <span class="field-limit">(最大200文字)</span>
+                    </label>
+                    <div class="gi-ai-field-description">
+                        助成金の概要を200文字程度で要約
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- JavaScript機能テスト -->
+        <div class="test-section">
+            <h2>2. JavaScript機能テスト <span id="js-test-status" class="test-status test-pending">テスト中</span></h2>
+            <p>JavaScript機能とイベントハンドリングをテストします。</p>
+            
+            <div id="js-test-results">
+                <ul id="js-test-list">
+                    <!-- テスト結果がここに表示されます -->
+                </ul>
+            </div>
+            
+            <!-- モック UI要素 -->
+            <div class="mock-metabox">
+                <div class="mock-metabox-header">AI自動入力（テスト用モック）</div>
+                <div class="mock-metabox-content" id="gi-ai-auto-fill-container">
+                    
+                    <!-- 進捗バー -->
+                    <div id="gi-ai-progress" class="gi-ai-progress hidden">
+                        <div class="gi-ai-progress-bar">
+                            <div class="gi-ai-progress-fill"></div>
+                        </div>
+                        <p class="gi-ai-progress-text">処理中...</p>
+                        <button type="button" id="gi-ai-cancel-btn" class="button">キャンセル</button>
+                    </div>
+                    
+                    <!-- 実行ボタン -->
+                    <button type="button" id="gi-ai-execute-btn" class="button button-primary">
+                        <span class="dashicons dashicons-admin-generic"></span>
+                        AI自動入力を実行（テスト）
+                    </button>
+                    
+                    <!-- 一括選択ボタン -->
+                    <div class="gi-ai-bulk-select">
+                        <button type="button" class="button" id="gi-ai-select-all">すべて選択</button>
+                        <button type="button" class="button" id="gi-ai-select-none">選択解除</button>
+                        <button type="button" class="button" id="gi-ai-select-high">高優先度のみ</button>
+                    </div>
+                    
+                    <!-- テスト用チェックボックス -->
+                    <div class="gi-ai-field-item">
+                        <label class="gi-ai-field-label">
+                            <input type="checkbox" class="gi-ai-field-checkbox" value="ai_summary">
+                            <span class="field-name">AI概要</span>
+                            <span class="field-status empty">未入力</span>
+                        </label>
+                    </div>
+                    <div class="gi-ai-field-item">
+                        <label class="gi-ai-field-label">
+                            <input type="checkbox" class="gi-ai-field-checkbox" value="grant_target">
+                            <span class="field-name">対象者・対象事業</span>
+                            <span class="field-status empty">未入力</span>
+                        </label>
+                    </div>
+                    <div class="gi-ai-field-item">
+                        <label class="gi-ai-field-label">
+                            <input type="checkbox" class="gi-ai-field-checkbox" value="eligible_expenses">
+                            <span class="field-name">対象経費</span>
+                            <span class="field-status filled">入力済み</span>
+                        </label>
+                    </div>
+                    
+                </div>
+            </div>
+        </div>
+        
+        <!-- プレビュー機能テスト -->
+        <div class="test-section">
+            <h2>3. プレビュー機能テスト <span id="preview-test-status" class="test-status test-pending">テスト中</span></h2>
+            
+            <!-- プレビューメタボックス -->
+            <div id="gi-ai-preview-container" class="hidden">
+                <div class="gi-ai-preview-header">
+                    <h4>AI生成結果プレビュー</h4>
+                    <div class="gi-ai-preview-actions">
+                        <button type="button" id="gi-ai-apply-all-btn" class="button button-primary">
+                            すべて適用
+                        </button>
+                        <button type="button" id="gi-ai-cancel-preview-btn" class="button">
+                            キャンセル
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="gi-ai-preview-content">
+                    <div class="gi-ai-preview-field">
+                        <div class="gi-ai-preview-field-header">
+                            <h5 class="gi-ai-preview-field-title">AI概要</h5>
+                            <span class="gi-ai-char-count">120 / 200 文字</span>
+                            <div class="gi-ai-preview-actions">
+                                <button type="button" class="button gi-ai-apply-field-btn" data-field="ai_summary">適用</button>
+                                <button type="button" class="button gi-ai-edit-field-btn" data-field="ai_summary">編集</button>
+                                <button type="button" class="button gi-ai-reject-field-btn" data-field="ai_summary">却下</button>
+                            </div>
+                        </div>
+                        
+                        <div class="gi-ai-generated-value">
+                            <h6>AI生成値:</h6>
+                            <div class="gi-ai-generated-content" data-field="ai_summary">
+                                <textarea class="gi-ai-textarea-content" rows="4">中小企業向けのデジタル化支援助成金です。IT導入や業務効率化のための設備投資に対して、最大200万円までの補助を行います。</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="button" id="show-preview-btn" class="button">プレビューを表示（テスト）</button>
+        </div>
+        
+        <!-- 通知システムテスト -->
+        <div class="test-section">
+            <h2>4. 通知システムテスト <span id="notification-test-status" class="test-status test-pending">テスト中</span></h2>
+            
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" id="test-success-notification" class="button">成功通知</button>
+                <button type="button" id="test-error-notification" class="button">エラー通知</button>
+                <button type="button" id="test-warning-notification" class="button">警告通知</button>
+                <button type="button" id="test-info-notification" class="button">情報通知</button>
+            </div>
+        </div>
+        
+        <!-- テスト結果サマリー -->
+        <div class="test-section">
+            <h2>5. テスト結果サマリー</h2>
+            <div id="test-summary">
+                <p>テスト実行中...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- jQuery読み込み（CDN） -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <!-- WordPressのwp.utilモック -->
+    <script>
+        // wp.util のモック実装
+        window.wp = {
+            util: {
+                template: function(id) {
+                    return function(data) {
+                        return '<div>Template: ' + id + '</div>';
+                    };
+                }
+            }
+        };
+        
+        // gi_ai_ajax設定のモック
+        window.gi_ai_ajax = {
+            ajax_url: '/wp-admin/admin-ajax.php',
+            nonce: 'mock_nonce_12345',
+            strings: {
+                processing: 'AI処理中...',
+                completed: '処理完了',
+                error: 'エラーが発生しました',
+                confirm_process: 'AI自動入力を実行しますか？',
+                confirm_rollback: 'ロールバックを実行しますか？',
+                no_fields_selected: '処理対象のフィールドを選択してください',
+                daily_limit_reached: '本日の利用上限に達しました'
+            },
+            daily_usage: 35,
+            daily_limit: 100,
+            debug: true
+        };
+        
+        // 投稿IDモック
+        $('<input type="hidden" id="post_ID" value="123">').appendTo('body');
+    </script>
+    
+    <!-- AI自動入力JavaScript -->
+    <script src="./assets/js/ai-auto-fill.js"></script>
+    
+    <!-- テスト実行スクリプト -->
+    <script>
+        $(document).ready(function() {
+            let testResults = [];
+            
+            // CSS読み込みテスト
+            function testCSS() {
+                const usageBar = $('.gi-ai-usage-bar');
+                const hasCorrectStyles = usageBar.length > 0 && 
+                                       usageBar.css('height') && 
+                                       usageBar.css('background-color');
+                                       
+                if (hasCorrectStyles) {
+                    $('#css-test-status').removeClass('test-pending').addClass('test-pass').text('PASS');
+                    testResults.push({name: 'CSS読み込み', status: 'PASS'});
+                } else {
+                    $('#css-test-status').removeClass('test-pending').addClass('test-fail').text('FAIL');
+                    testResults.push({name: 'CSS読み込み', status: 'FAIL'});
+                }
+            }
+            
+            // JavaScript機能テスト
+            function testJavaScript() {
+                const tests = [
+                    {
+                        name: 'GI_AI_AutoFillクラス存在確認',
+                        test: () => typeof window.GI_AI_AutoFill !== 'undefined'
+                    },
+                    {
+                        name: 'ユーティリティ関数存在確認',
+                        test: () => typeof window.GI_AI_Utils !== 'undefined'
+                    },
+                    {
+                        name: 'jQueryイベントハンドラー登録確認',
+                        test: () => {
+                            // イベントハンドラーが登録されているかチェック
+                            const events = $._data(document, 'events');
+                            return events && events.click && events.click.some(e => 
+                                e.selector && e.selector.includes('gi-ai-')
+                            );
+                        }
+                    },
+                    {
+                        name: 'フィールド選択機能',
+                        test: () => {
+                            $('#gi-ai-select-all').trigger('click');
+                            const checkedCount = $('.gi-ai-field-checkbox:checked').length;
+                            return checkedCount > 0;
+                        }
+                    },
+                    {
+                        name: '実行ボタン状態更新',
+                        test: () => {
+                            const executeBtn = $('#gi-ai-execute-btn');
+                            return executeBtn.length > 0 && !executeBtn.prop('disabled');
+                        }
+                    }
+                ];
+                
+                let passCount = 0;
+                const testList = $('#js-test-list');
+                
+                tests.forEach(test => {
+                    try {
+                        const result = test.test();
+                        const status = result ? 'PASS' : 'FAIL';
+                        const className = result ? 'test-pass' : 'test-fail';
+                        
+                        testList.append(`
+                            <li>
+                                <span class="test-status ${className}">${status}</span>
+                                ${test.name}
+                            </li>
+                        `);
+                        
+                        if (result) passCount++;
+                        testResults.push({name: test.name, status: status});
+                        
+                    } catch (error) {
+                        testList.append(`
+                            <li>
+                                <span class="test-status test-fail">ERROR</span>
+                                ${test.name}: ${error.message}
+                            </li>
+                        `);
+                        testResults.push({name: test.name, status: 'ERROR', error: error.message});
+                    }
+                });
+                
+                const overallStatus = passCount === tests.length ? 'test-pass' : 'test-fail';
+                const overallText = passCount === tests.length ? 'PASS' : `PARTIAL (${passCount}/${tests.length})`;
+                
+                $('#js-test-status').removeClass('test-pending').addClass(overallStatus).text(overallText);
+            }
+            
+            // プレビュー機能テスト
+            function testPreview() {
+                $('#show-preview-btn').on('click', function() {
+                    $('#gi-ai-preview-container').removeClass('hidden');
+                    $('#preview-test-status').removeClass('test-pending').addClass('test-pass').text('PASS');
+                    testResults.push({name: 'プレビュー表示', status: 'PASS'});
+                });
+            }
+            
+            // 通知システムテスト
+            function testNotifications() {
+                $('#test-success-notification').on('click', function() {
+                    if (window.GI_AI_AutoFill && window.GI_AI_AutoFill.showNotification) {
+                        window.GI_AI_AutoFill.showNotification('成功通知のテストです', 'success', 3000);
+                    }
+                });
+                
+                $('#test-error-notification').on('click', function() {
+                    if (window.GI_AI_AutoFill && window.GI_AI_AutoFill.showNotification) {
+                        window.GI_AI_AutoFill.showNotification('エラー通知のテストです', 'error', 3000);
+                    }
+                });
+                
+                $('#test-warning-notification').on('click', function() {
+                    if (window.GI_AI_AutoFill && window.GI_AI_AutoFill.showNotification) {
+                        window.GI_AI_AutoFill.showNotification('警告通知のテストです', 'warning', 3000);
+                    }
+                });
+                
+                $('#test-info-notification').on('click', function() {
+                    if (window.GI_AI_AutoFill && window.GI_AI_AutoFill.showNotification) {
+                        window.GI_AI_AutoFill.showNotification('情報通知のテストです', 'info', 3000);
+                    }
+                });
+                
+                $('#notification-test-status').removeClass('test-pending').addClass('test-pass').text('READY');
+                testResults.push({name: '通知システム', status: 'READY'});
+            }
+            
+            // テスト結果サマリー更新
+            function updateSummary() {
+                const passCount = testResults.filter(r => r.status === 'PASS' || r.status === 'READY').length;
+                const totalCount = testResults.length;
+                const failCount = testResults.filter(r => r.status === 'FAIL' || r.status === 'ERROR').length;
+                
+                const summaryHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                        <div style="padding: 16px; background: #d1e7dd; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #0f5132;">${passCount}</div>
+                            <div>成功</div>
+                        </div>
+                        <div style="padding: 16px; background: #f8d7da; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #721c24;">${failCount}</div>
+                            <div>失敗</div>
+                        </div>
+                        <div style="padding: 16px; background: #e2e3e5; border-radius: 6px; text-align: center;">
+                            <div style="font-size: 24px; font-weight: bold; color: #41464b;">${totalCount}</div>
+                            <div>合計</div>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 16px;">
+                        <h4>詳細結果:</h4>
+                        <ul>
+                            ${testResults.map(r => `
+                                <li>
+                                    <span class="test-status ${r.status === 'PASS' || r.status === 'READY' ? 'test-pass' : 'test-fail'}">${r.status}</span>
+                                    ${r.name}
+                                    ${r.error ? ` - ${r.error}` : ''}
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                `;
+                
+                $('#test-summary').html(summaryHTML);
+            }
+            
+            // テスト実行
+            setTimeout(() => {
+                testCSS();
+                setTimeout(testJavaScript, 500);
+                setTimeout(testPreview, 1000);
+                setTimeout(testNotifications, 1500);
+                setTimeout(updateSummary, 2000);
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

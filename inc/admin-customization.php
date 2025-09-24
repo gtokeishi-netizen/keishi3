@@ -48,6 +48,9 @@ function gi_admin_init() {
     
     // 投稿一覧カラム追加
     add_filter('manage_grant_posts_columns', 'gi_add_grant_columns');
+    
+    // AI自動入力設定メニューの追加
+    add_action('admin_menu', 'gi_add_ai_settings_menu');
     add_action('manage_grant_posts_custom_column', 'gi_grant_column_content', 10, 2);
 }
 add_action('admin_init', 'gi_admin_init');
@@ -686,4 +689,215 @@ function gi_ai_statistics_page() {
         echo '<div class="notice notice-success"><p>統計データをリセットしました。</p></div>';
         echo '<script>setTimeout(function(){ location.href="?page=gi-ai-statistics"; }, 2000);</script>';
     }
+}
+/**
+ * AI自動入力設定メニューの追加
+ */
+function gi_add_ai_settings_menu() {
+    add_options_page(
+        'AI自動入力設定',
+        'AI自動入力',
+        'manage_options',
+        'gi-ai-settings',
+        'gi_render_ai_settings_page'
+    );
+    
+    // AI統計ページも追加
+    add_management_page(
+        'AI使用統計',
+        'AI使用統計',
+        'manage_options',
+        'gi-ai-usage-stats',
+        'gi_render_ai_usage_stats_page'
+    );
+}
+
+/**
+ * AI自動入力設定ページのレンダリング
+ */
+function gi_render_ai_settings_page() {
+    // 設定保存処理
+    if (isset($_POST['submit']) && wp_verify_nonce($_POST['gi_ai_settings_nonce'], 'gi_ai_settings')) {
+        // APIキーの暗号化保存（特別処理）
+        if (!empty($_POST['gi_openai_api_key'])) {
+            $api_key = sanitize_text_field($_POST['gi_openai_api_key']);
+            if (class_exists('GI_AI_API_Handler')) {
+                $save_result = GI_AI_API_Handler::save_encrypted_api_key($api_key);
+                if (!$save_result) {
+                    echo '<div class="notice notice-error"><p>APIキーの保存に失敗しました。</p></div>';
+                }
+                // 旧形式のAPIキーを削除
+                delete_option('gi_openai_api_key');
+            }
+        }
+        
+        // その他の設定
+        $settings = array(
+            'gi_ai_daily_limit' => intval($_POST['gi_ai_daily_limit'] ?? 100),
+            'gi_ai_auto_save' => isset($_POST['gi_ai_auto_save']) ? 1 : 0,
+            'gi_ai_notification_email' => sanitize_email($_POST['gi_ai_notification_email'] ?? ''),
+            'gi_ai_retry_count' => intval($_POST['gi_ai_retry_count'] ?? 3),
+            'gi_ai_timeout' => intval($_POST['gi_ai_timeout'] ?? 30),
+            'gi_ai_temperature' => floatval($_POST['gi_ai_temperature'] ?? 0.7),
+            'gi_ai_max_tokens' => intval($_POST['gi_ai_max_tokens'] ?? 1000)
+        );
+        
+        foreach ($settings as $key => $value) {
+            update_option($key, $value);
+        }
+        
+        echo '<div class="notice notice-success"><p>設定を保存しました。</p></div>';
+    }
+    
+    // API接続テスト
+    if (isset($_POST['test_api_connection']) && wp_verify_nonce($_POST['gi_ai_test_nonce'], 'gi_ai_test')) {
+        if (class_exists('GI_AI_API_Handler')) {
+            $api_handler = new GI_AI_API_Handler();
+            $test_result = $api_handler->test_connection();
+            
+            $notice_class = $test_result['success'] ? 'notice-success' : 'notice-error';
+            echo '<div class="notice ' . $notice_class . '"><p>' . esc_html($test_result['message']) . '</p></div>';
+        } else {
+            echo '<div class="notice notice-error"><p>API Handlerクラスが見つかりません。</p></div>';
+        }
+    }
+    
+    // 現在の設定値を取得
+    $api_key_display = class_exists('GI_AI_API_Handler') ? GI_AI_API_Handler::get_masked_api_key() : '';
+    $daily_limit = get_option('gi_ai_daily_limit', 100);
+    $auto_save = get_option('gi_ai_auto_save', 0);
+    $notification_email = get_option('gi_ai_notification_email', get_option('admin_email'));
+    $retry_count = get_option('gi_ai_retry_count', 3);
+    $timeout = get_option('gi_ai_timeout', 30);
+    $temperature = get_option('gi_ai_temperature', 0.7);
+    $max_tokens = get_option('gi_ai_max_tokens', 1000);
+    ?>
+    
+    <div class="wrap">
+        <h1>AI自動入力設定</h1>
+        <p>ChatGPT APIを使用した助成金情報の自動入力機能の設定を行います。</p>
+        
+        <form method="post" action="">
+            <?php wp_nonce_field('gi_ai_settings', 'gi_ai_settings_nonce'); ?>
+            
+            <table class="form-table">
+                <tr>
+                    <th scope="row">
+                        <label for="gi_openai_api_key">OpenAI APIキー</label>
+                    </th>
+                    <td>
+                        <input type="password" 
+                               id="gi_openai_api_key" 
+                               name="gi_openai_api_key" 
+                               value="" 
+                               class="regular-text" 
+                               placeholder="sk-..." />
+                        <p class="description">
+                            ChatGPT API利用のためのAPIキーを入力してください。
+                            <?php if (!empty($api_key_display)): ?>
+                                <br><strong>現在設定済み:</strong> <code><?php echo esc_html($api_key_display); ?></code>
+                                <br><small>※新しいキーを入力すると上書きされます</small>
+                            <?php endif; ?>
+                            <br><a href="https://platform.openai.com/api-keys" target="_blank">OpenAI APIキーを取得</a>
+                        </p>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th scope="row">
+                        <label for="gi_ai_daily_limit">日次利用上限</label>
+                    </th>
+                    <td>
+                        <input type="number" 
+                               id="gi_ai_daily_limit" 
+                               name="gi_ai_daily_limit" 
+                               value="<?php echo esc_attr($daily_limit); ?>" 
+                               min="1" 
+                               max="1000" />
+                        <p class="description">1日あたりの最大API呼び出し回数（コスト管理用）</p>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th scope="row">自動保存モード</th>
+                    <td>
+                        <fieldset>
+                            <label>
+                                <input type="checkbox" 
+                                       name="gi_ai_auto_save" 
+                                       value="1" 
+                                       <?php checked($auto_save, 1); ?> />
+                                生成後に自動で保存する
+                            </label>
+                            <p class="description">無効の場合は手動確認後に保存</p>
+                        </fieldset>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th scope="row">
+                        <label for="gi_ai_notification_email">エラー通知メール</label>
+                    </th>
+                    <td>
+                        <input type="email" 
+                               id="gi_ai_notification_email" 
+                               name="gi_ai_notification_email" 
+                               value="<?php echo esc_attr($notification_email); ?>" 
+                               class="regular-text" />
+                        <p class="description">エラー発生時の通知先メールアドレス</p>
+                    </td>
+                </tr>
+            </table>
+            
+            <?php submit_button('設定を保存'); ?>
+        </form>
+        
+        <hr>
+        
+        <h2>API接続テスト</h2>
+        <p>設定したAPIキーでOpenAIサービスに接続できるかテストします。</p>
+        <form method="post" action="">
+            <?php wp_nonce_field('gi_ai_test', 'gi_ai_test_nonce'); ?>
+            <p>
+                <?php submit_button('接続テスト実行', 'secondary', 'test_api_connection', false); ?>
+            </p>
+        </form>
+        
+        <hr>
+        
+        <h2>使用統計</h2>
+        <?php gi_render_ai_usage_summary(); ?>
+        <p>
+            <a href="<?php echo admin_url('tools.php?page=gi-ai-usage-stats'); ?>" class="button">
+                詳細統計を表示
+            </a>
+        </p>
+    </div>
+    <?php
+}
+
+/**
+ * AI使用統計サマリーの表示
+ */
+function gi_render_ai_usage_summary() {
+    $today_usage = function_exists('gi_get_daily_ai_usage') ? gi_get_daily_ai_usage() : 0;
+    $daily_limit = get_option('gi_ai_daily_limit', 100);
+    $usage_percentage = $daily_limit > 0 ? ($today_usage / $daily_limit) * 100 : 0;
+    ?>
+    <div style="margin: 16px 0;">
+        <h4 style="margin-bottom: 8px;">本日の利用状況</h4>
+        <div style="width: 100%; height: 20px; background: #e1e1e1; border-radius: 10px; overflow: hidden; margin-bottom: 8px;">
+            <div style="height: 100%; background: linear-gradient(90deg, #00a32a 0%, #ffb900 70%, #d63638 100%); width: <?php echo min($usage_percentage, 100); ?>%; transition: width 0.3s ease;"></div>
+        </div>
+        <p style="margin: 0; font-size: 13px; color: #666;">
+            <?php echo $today_usage; ?> / <?php echo $daily_limit; ?> 回使用 
+            (<?php echo round($usage_percentage, 1); ?>%)
+        </p>
+        <?php if ($usage_percentage > 80): ?>
+            <p style="color: #d63638; font-weight: bold; margin: 8px 0 0 0;">
+                ⚠️ 利用上限に近づいています
+            </p>
+        <?php endif; ?>
+    </div>
+    <?php
 }
