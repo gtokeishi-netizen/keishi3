@@ -217,6 +217,16 @@ function gi_add_admin_menu() {
         'gi-ai-statistics',
         'gi_ai_statistics_page'
     );
+    
+    // AI一括処理サブメニュー
+    add_submenu_page(
+        'gi-ai-settings',
+        'AI一括処理',
+        'バッチ処理',
+        'manage_options',
+        'gi-ai-batch-processing',
+        'gi_ai_batch_processing_page'
+    );
 }
 add_action('admin_menu', 'gi_add_admin_menu');
 
@@ -690,8 +700,339 @@ function gi_ai_statistics_page() {
         echo '<script>setTimeout(function(){ location.href="?page=gi-ai-statistics"; }, 2000);</script>';
     }
 }
+
 /**
- * AI自動入力設定メニューの追加
+ * 一括下書き投稿作成
+ */
+function gi_create_bulk_draft_posts($count, $title_template) {
+    $created_posts = array();
+    
+    for ($i = 1; $i <= $count; $i++) {
+        $title = str_replace('{number}', $i, $title_template);
+        
+        $post_data = array(
+            'post_title' => $title,
+            'post_content' => '',
+            'post_status' => 'draft',
+            'post_type' => 'grant',
+            'post_author' => get_current_user_id()
+        );
+        
+        $post_id = wp_insert_post($post_data);
+        
+        if ($post_id && !is_wp_error($post_id)) {
+            // 基本的なメタフィールドを設定
+            update_post_meta($post_id, 'grant_organization', '');
+            update_post_meta($post_id, 'grant_url', '');
+            update_post_meta($post_id, 'max_amount', '');
+            update_post_meta($post_id, 'application_deadline', '');
+            
+            $created_posts[] = $post_id;
+        }
+    }
+    
+    return $created_posts;
+}
+
+/**
+ * AI一括処理ページ
+ */
+function gi_ai_batch_processing_page() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    
+    // バッチ処理実行
+    if (isset($_POST['execute_batch']) && wp_verify_nonce($_POST['gi_batch_nonce'], 'gi_batch_processing')) {
+        $selected_posts = isset($_POST['selected_posts']) ? $_POST['selected_posts'] : array();
+        $selected_fields = isset($_POST['selected_fields']) ? $_POST['selected_fields'] : array();
+        
+        if (!empty($selected_posts) && !empty($selected_fields)) {
+            // セッションに処理情報を保存
+            set_transient('gi_batch_processing_data', array(
+                'posts' => $selected_posts,
+                'fields' => $selected_fields,
+                'user_id' => get_current_user_id(),
+                'start_time' => current_time('mysql')
+            ), 3600);
+            
+            echo '<div class="notice notice-success"><p>バッチ処理を開始しました。進捗は下記で確認できます。</p></div>';
+        }
+    }
+    
+    // 一括投稿作成処理
+    if (isset($_POST['create_bulk_posts']) && wp_verify_nonce($_POST['gi_bulk_create_nonce'], 'gi_bulk_create')) {
+        $post_count = intval($_POST['post_count']);
+        $post_title_template = sanitize_text_field($_POST['post_title_template']);
+        
+        if ($post_count > 0 && $post_count <= 100) {
+            $created_posts = gi_create_bulk_draft_posts($post_count, $post_title_template);
+            echo '<div class="notice notice-success"><p>' . count($created_posts) . '件の下書き投稿を作成しました。</p></div>';
+        }
+    }
+    
+    // 助成金投稿一覧を取得
+    $grant_posts = get_posts(array(
+        'post_type' => 'grant',
+        'post_status' => 'draft',
+        'numberposts' => 100,
+        'orderby' => 'date',
+        'order' => 'DESC'
+    ));
+    
+    // フィールド定義
+    $available_fields = array(
+        'ai_summary' => 'AI概要',
+        'grant_target' => '対象者・対象事業',
+        'eligible_expenses' => '対象経費',
+        'grant_difficulty' => '申請難易度',
+        'required_documents' => '必要書類',
+        'application_method' => '申請方法',
+        'contact_info' => '問い合わせ先',
+        'amount_note' => '金額備考',
+        'deadline_note' => '締切備考'
+    );
+    ?>
+    
+    <div class="wrap">
+        <h1>AI一括処理</h1>
+        <p>複数の助成金投稿に対してAI自動入力を一括実行します。</p>
+        
+        <!-- 一括投稿作成セクション -->
+        <div class="gi-batch-section">
+            <h2>📝 一括投稿作成</h2>
+            <form method="post" action="">
+                <?php wp_nonce_field('gi_bulk_create', 'gi_bulk_create_nonce'); ?>
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="post_count">作成する投稿数</label>
+                        </th>
+                        <td>
+                            <input type="number" 
+                                   id="post_count" 
+                                   name="post_count" 
+                                   value="10" 
+                                   min="1" 
+                                   max="100" />
+                            <p class="description">一度に作成できる投稿数は最大100件です</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="post_title_template">タイトルテンプレート</label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                   id="post_title_template" 
+                                   name="post_title_template" 
+                                   value="助成金 #{number}" 
+                                   class="regular-text" />
+                            <p class="description">{number} は連番に置き換えられます（例：助成金 #1, 助成金 #2...）</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <?php submit_button('一括投稿作成', 'secondary', 'create_bulk_posts'); ?>
+            </form>
+        </div>
+        
+        <hr>
+        
+        <!-- バッチ処理セクション -->
+        <div class="gi-batch-section">
+            <h2>🤖 AI一括処理</h2>
+            
+            <?php if (empty($grant_posts)): ?>
+                <div class="notice notice-info">
+                    <p>処理対象の下書き投稿がありません。まず上記の「一括投稿作成」で投稿を作成してください。</p>
+                </div>
+            <?php else: ?>
+                <form method="post" action="" id="gi-batch-form">
+                    <?php wp_nonce_field('gi_batch_processing', 'gi_batch_nonce'); ?>
+                    
+                    <!-- フィールド選択 -->
+                    <h3>処理対象フィールド</h3>
+                    <div class="gi-field-selection">
+                        <?php foreach ($available_fields as $field_key => $field_name): ?>
+                            <label>
+                                <input type="checkbox" 
+                                       name="selected_fields[]" 
+                                       value="<?php echo esc_attr($field_key); ?>"
+                                       <?php checked(in_array($field_key, array('ai_summary', 'grant_target', 'eligible_expenses'))); ?> />
+                                <?php echo esc_html($field_name); ?>
+                            </label><br>
+                        <?php endforeach; ?>
+                    </div>
+                    
+                    <h3>処理対象投稿（下書きのみ）</h3>
+                    <div class="gi-post-selection">
+                        <p>
+                            <button type="button" id="select-all" class="button">全選択</button>
+                            <button type="button" id="select-none" class="button">全解除</button>
+                            <span class="description">選択した投稿：<span id="selected-count">0</span>件</span>
+                        </p>
+                        
+                        <div class="gi-posts-list">
+                            <?php foreach ($grant_posts as $post): 
+                                $current_title = $post->post_title ?: '（タイトル未設定）';
+                                $modified_date = get_the_modified_date('Y/m/d H:i', $post);
+                            ?>
+                                <label class="gi-post-item">
+                                    <input type="checkbox" 
+                                           name="selected_posts[]" 
+                                           value="<?php echo $post->ID; ?>" 
+                                           class="gi-post-checkbox" />
+                                    <div class="gi-post-info">
+                                        <strong><?php echo esc_html($current_title); ?></strong>
+                                        <span class="gi-post-meta">
+                                            ID: <?php echo $post->ID; ?> | 
+                                            更新: <?php echo $modified_date; ?>
+                                        </span>
+                                    </div>
+                                </label>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    
+                    <div class="gi-batch-controls">
+                        <?php submit_button('選択した投稿にAI処理を実行', 'primary', 'execute_batch'); ?>
+                    </div>
+                </form>
+                
+                <!-- 進捗表示エリア -->
+                <div id="gi-batch-progress" style="display: none;">
+                    <h3>処理進捗</h3>
+                    <div class="gi-progress-bar">
+                        <div class="gi-progress-fill" style="width: 0%"></div>
+                    </div>
+                    <p class="gi-progress-text">0 / 0 件処理中...</p>
+                    <div class="gi-batch-results"></div>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <style>
+    .gi-batch-section {
+        background: #fff;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #ccd0d4;
+        border-radius: 4px;
+    }
+    
+    .gi-field-selection label {
+        display: inline-block;
+        width: 200px;
+        margin-right: 20px;
+        margin-bottom: 10px;
+    }
+    
+    .gi-posts-list {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        padding: 10px;
+        background: #fafafa;
+    }
+    
+    .gi-post-item {
+        display: block;
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+    }
+    
+    .gi-post-item:hover {
+        background: #f0f0f0;
+    }
+    
+    .gi-post-info {
+        margin-left: 25px;
+    }
+    
+    .gi-post-meta {
+        color: #666;
+        font-size: 12px;
+    }
+    
+    .gi-progress-bar {
+        width: 100%;
+        height: 30px;
+        background: #f1f1f1;
+        border-radius: 15px;
+        overflow: hidden;
+        margin: 10px 0;
+    }
+    
+    .gi-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #00a32a, #00d084);
+        transition: width 0.3s ease;
+    }
+    
+    .gi-batch-controls {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #ddd;
+    }
+    </style>
+    
+    <script>
+    jQuery(document).ready(function($) {
+        // 全選択/全解除
+        $('#select-all').click(function() {
+            $('.gi-post-checkbox').prop('checked', true);
+            updateSelectedCount();
+        });
+        
+        $('#select-none').click(function() {
+            $('.gi-post-checkbox').prop('checked', false);
+            updateSelectedCount();
+        });
+        
+        // 選択数更新
+        $('.gi-post-checkbox').change(updateSelectedCount);
+        
+        function updateSelectedCount() {
+            var count = $('.gi-post-checkbox:checked').length;
+            $('#selected-count').text(count);
+        }
+        
+        // 初期カウント
+        updateSelectedCount();
+        
+        // バッチ処理フォーム送信
+        $('#gi-batch-form').submit(function(e) {
+            var selectedPosts = $('.gi-post-checkbox:checked').length;
+            var selectedFields = $('input[name="selected_fields[]"]:checked').length;
+            
+            if (selectedPosts === 0) {
+                alert('処理対象の投稿を選択してください。');
+                e.preventDefault();
+                return false;
+            }
+            
+            if (selectedFields === 0) {
+                alert('処理対象のフィールドを選択してください。');
+                e.preventDefault();
+                return false;
+            }
+            
+            if (!confirm(selectedPosts + '件の投稿に対してAI処理を実行します。よろしいですか？\n\n※この処理には時間がかかる場合があります。')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+    });
+    </script>
+    <?php
+}
+
+/**
+ * 一括投稿作成メニューの追加
  */
 function gi_add_ai_settings_menu() {
     add_options_page(
@@ -739,7 +1080,10 @@ function gi_render_ai_settings_page() {
             'gi_ai_retry_count' => intval($_POST['gi_ai_retry_count'] ?? 3),
             'gi_ai_timeout' => intval($_POST['gi_ai_timeout'] ?? 30),
             'gi_ai_temperature' => floatval($_POST['gi_ai_temperature'] ?? 0.7),
-            'gi_ai_max_tokens' => intval($_POST['gi_ai_max_tokens'] ?? 1000)
+            'gi_ai_max_tokens' => intval($_POST['gi_ai_max_tokens'] ?? 1000),
+            'gi_ai_auto_processing_enabled' => isset($_POST['gi_ai_auto_processing_enabled']) ? 1 : 0,
+            'gi_ai_auto_publish_enabled' => isset($_POST['gi_ai_auto_publish_enabled']) ? 1 : 0,
+            'gi_ai_auto_publish_delay' => intval($_POST['gi_ai_auto_publish_delay'] ?? 7)
         );
         
         foreach ($settings as $key => $value) {
@@ -845,6 +1189,57 @@ function gi_render_ai_settings_page() {
                                value="<?php echo esc_attr($notification_email); ?>" 
                                class="regular-text" />
                         <p class="description">エラー発生時の通知先メールアドレス</p>
+                    </td>
+                </tr>
+            </table>
+            
+            <h3>🔄 スケジューリング設定</h3>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">自動処理モード</th>
+                    <td>
+                        <fieldset>
+                            <label>
+                                <input type="checkbox" 
+                                       name="gi_ai_auto_processing_enabled" 
+                                       value="1" 
+                                       <?php checked(get_option('gi_ai_auto_processing_enabled', 0), 1); ?> />
+                                下書き投稿への自動AI処理を有効にする
+                            </label>
+                            <p class="description">作成から24時間経過した下書き投稿に対して、1時間ごとに自動でAI処理を実行します</p>
+                        </fieldset>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th scope="row">自動公開モード</th>
+                    <td>
+                        <fieldset>
+                            <label>
+                                <input type="checkbox" 
+                                       name="gi_ai_auto_publish_enabled" 
+                                       value="1" 
+                                       <?php checked(get_option('gi_ai_auto_publish_enabled', 0), 1); ?> />
+                                AI処理済み投稿の自動公開を有効にする
+                            </label>
+                            <p class="description">AI処理が完了した投稿を指定日数後に自動で公開します</p>
+                        </fieldset>
+                    </td>
+                </tr>
+                
+                <tr>
+                    <th scope="row">
+                        <label for="gi_ai_auto_publish_delay">公開遅延日数</label>
+                    </th>
+                    <td>
+                        <input type="number" 
+                               id="gi_ai_auto_publish_delay" 
+                               name="gi_ai_auto_publish_delay" 
+                               value="<?php echo esc_attr(get_option('gi_ai_auto_publish_delay', 7)); ?>" 
+                               min="1" 
+                               max="30" />
+                        <span>日</span>
+                        <p class="description">AI処理完了後、何日後に自動公開するかを指定</p>
                     </td>
                 </tr>
             </table>

@@ -43,6 +43,19 @@ class GI_AI_Auto_Fill {
         
         // クリーンアップ処理
         add_action('wp_scheduled_delete', array($this, 'cleanup_old_logs'));
+        
+        // スケジューリング機能
+        add_action('gi_ai_scheduled_processing', array($this, 'run_scheduled_processing'));
+        add_action('gi_ai_auto_publish', array($this, 'run_auto_publish'));
+        
+        // スケジュール設定
+        if (!wp_next_scheduled('gi_ai_scheduled_processing')) {
+            wp_schedule_event(time(), 'hourly', 'gi_ai_scheduled_processing');
+        }
+        
+        if (!wp_next_scheduled('gi_ai_auto_publish')) {
+            wp_schedule_event(time(), 'daily', 'gi_ai_auto_publish');
+        }
     }
     
     /**
@@ -984,6 +997,164 @@ class GI_AI_Auto_Fill {
         $wpdb->query($wpdb->prepare(
             "DELETE FROM $backup_table WHERE backup_timestamp < DATE_SUB(NOW(), INTERVAL 1 MONTH) AND is_restored = 1"
         ));
+    }
+    
+    /**
+     * スケジュールされた処理の実行
+     */
+    public function run_scheduled_processing() {
+        // スケジューリング設定を取得
+        $auto_processing_enabled = get_option('gi_ai_auto_processing_enabled', 0);
+        
+        if (!$auto_processing_enabled) {
+            return;
+        }
+        
+        // 処理対象の投稿を取得（下書きで、作成から24時間以上経過）
+        $posts = get_posts(array(
+            'post_type' => 'grant',
+            'post_status' => 'draft',
+            'numberposts' => 10,
+            'date_query' => array(
+                array(
+                    'before' => '24 hours ago'
+                )
+            ),
+            'meta_query' => array(
+                array(
+                    'key' => '_gi_ai_processed',
+                    'compare' => 'NOT EXISTS'
+                )
+            )
+        ));
+        
+        if (empty($posts)) {
+            return;
+        }
+        
+        // デフォルトフィールドを取得
+        $default_fields = json_decode(get_option('gi_ai_default_fields', '["ai_summary", "grant_target"]'), true);
+        
+        foreach ($posts as $post) {
+            // 日次制限をチェック
+            if (!$this->check_daily_limit()) {
+                break;
+            }
+            
+            // AI処理実行
+            $result = $this->execute_ai_fill($post->ID, $default_fields);
+            
+            // 処理済みマークを追加
+            update_post_meta($post->ID, '_gi_ai_processed', current_time('mysql'));
+            
+            // スケジュール処理のログ
+            $this->log_scheduled_processing($post->ID, $result);
+            
+            // API制限対応
+            sleep(2);
+        }
+    }
+    
+    /**
+     * 自動公開処理
+     */
+    public function run_auto_publish() {
+        $auto_publish_enabled = get_option('gi_ai_auto_publish_enabled', 0);
+        
+        if (!$auto_publish_enabled) {
+            return;
+        }
+        
+        // 自動公開の条件を満たす投稿を取得
+        $publish_delay_days = get_option('gi_ai_auto_publish_delay', 7);
+        
+        $posts = get_posts(array(
+            'post_type' => 'grant',
+            'post_status' => 'draft',
+            'numberposts' => 20,
+            'date_query' => array(
+                array(
+                    'before' => $publish_delay_days . ' days ago'
+                )
+            ),
+            'meta_query' => array(
+                array(
+                    'key' => '_gi_ai_processed',
+                    'compare' => 'EXISTS'
+                ),
+                array(
+                    'key' => '_gi_ai_auto_published',
+                    'compare' => 'NOT EXISTS'
+                )
+            )
+        ));
+        
+        foreach ($posts as $post) {
+            // 必須フィールドの確認
+            if ($this->validate_post_for_publish($post->ID)) {
+                // 投稿を公開
+                wp_update_post(array(
+                    'ID' => $post->ID,
+                    'post_status' => 'publish'
+                ));
+                
+                // 自動公開済みマーク
+                update_post_meta($post->ID, '_gi_ai_auto_published', current_time('mysql'));
+                
+                // ログ記録
+                error_log("AI Auto Publish: Post ID {$post->ID} automatically published");
+            }
+        }
+    }
+    
+    /**
+     * 投稿の公開準備状況を検証
+     */
+    private function validate_post_for_publish($post_id) {
+        // タイトルチェック
+        $post = get_post($post_id);
+        if (empty($post->post_title) || trim($post->post_title) === '') {
+            return false;
+        }
+        
+        // 必須フィールドチェック
+        $required_fields = array('ai_summary', 'grant_target');
+        foreach ($required_fields as $field) {
+            $value = get_field($field, $post_id);
+            if (empty($value) || trim(strip_tags($value)) === '') {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * スケジュール処理のログ記録
+     */
+    private function log_scheduled_processing($post_id, $result) {
+        global $wpdb;
+        
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        
+        $log_data = array(
+            'timestamp' => current_time('mysql'),
+            'user_id' => 0, // システム処理
+            'post_id' => $post_id,
+            'fields_processed' => json_encode($result['updated_fields'] ?? array()),
+            'tokens_used' => $result['total_tokens'] ?? 0,
+            'processing_time' => $result['processing_time'] ?? 0,
+            'success' => $result['success'] ? 1 : 0,
+            'error_message' => $result['success'] ? 'Scheduled processing' : $result['message'],
+            'ip_address' => 'scheduled',
+            'user_agent' => 'AI Scheduler'
+        );
+        
+        $wpdb->insert(
+            $usage_table,
+            $log_data,
+            array('%s', '%d', '%d', '%s', '%d', '%f', '%d', '%s', '%s', '%s')
+        );
     }
 }
 
