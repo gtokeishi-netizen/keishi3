@@ -51,8 +51,8 @@ class GI_AI_API_Handler {
             'gi_ai_max_tokens' => 1000,
             'gi_ai_temperature' => 0.7,
             'gi_ai_retry_count' => 3,
-            'gi_ai_timeout' => 30,
-            'gi_ai_daily_limit' => 100
+            'gi_ai_timeout' => 30
+            // 'gi_ai_daily_limit' => 100  // 制限機能を無効化
         );
         
         foreach ($defaults as $option_name => $default_value) {

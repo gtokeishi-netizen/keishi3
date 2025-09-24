@@ -162,15 +162,15 @@ class GI_AI_Admin_Interface {
         $is_draft = $post->post_status === 'draft';
         $can_process = $is_draft && current_user_can('edit_post', $post->ID);
         
-        // 利用状況の取得
-        $daily_usage = $this->get_daily_usage();
-        $daily_limit = get_option('gi_ai_daily_limit', 100);
-        $usage_percentage = ($daily_usage / $daily_limit) * 100;
+        // 利用状況表示を無効化
+        // $daily_usage = $this->get_daily_usage();
+        // $daily_limit = get_option('gi_ai_daily_limit', 100);
+        // $usage_percentage = ($daily_usage / $daily_limit) * 100;
         
         ?>
         <div id="gi-ai-auto-fill-container">
             
-            <!-- 利用状況表示 -->
+            <!-- 利用状況表示を無効化
             <div class="gi-ai-usage-status">
                 <h4>本日の利用状況</h4>
                 <div class="gi-ai-usage-bar">
@@ -181,6 +181,7 @@ class GI_AI_Admin_Interface {
                     (<?php echo round($usage_percentage, 1); ?>%)
                 </p>
             </div>
+            -->
             
             <?php if (!$can_process): ?>
                 <div class="notice notice-warning inline">

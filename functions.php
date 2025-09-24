@@ -159,7 +159,6 @@ function gi_ai_enqueue_admin_assets($hook) {
             'daily_limit_reached' => '本日の利用上限に達しました'
         ),
         'daily_usage' => function_exists('gi_get_daily_ai_usage') ? gi_get_daily_ai_usage() : 0,
-        'daily_limit' => get_option('gi_ai_daily_limit', 100),
         'debug' => defined('WP_DEBUG') && WP_DEBUG
     ));
 }

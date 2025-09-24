@@ -197,11 +197,9 @@ class GI_AI_Auto_Fill {
                 'error' => 'エラーが発生しました',
                 'confirm_process' => 'AI自動入力を実行しますか？',
                 'confirm_rollback' => 'ロールバックを実行しますか？すべての変更が元に戻ります。',
-                'no_fields_selected' => '処理対象のフィールドを選択してください',
-                'daily_limit_reached' => '本日の利用上限に達しました'
+                'no_fields_selected' => '処理対象のフィールドを選択してください'
             ),
-            'daily_usage' => $this->get_daily_usage(),
-            'daily_limit' => get_option('gi_ai_daily_limit', 100)
+            'daily_usage' => $this->get_daily_usage()
         ));
     }
     
@@ -239,10 +237,10 @@ class GI_AI_Auto_Fill {
                 wp_send_json_error('下書き状態の投稿のみ処理可能です');
             }
             
-            // 日次制限チェック
-            if (!$this->check_daily_limit()) {
-                wp_send_json_error('本日の利用上限に達しました');
-            }
+            // 日次制限チェックを無効化
+            // if (!$this->check_daily_limit()) {
+            //     wp_send_json_error('本日の利用上限に達しました');
+            // }
             
             // フィールド選択チェック
             if (empty($target_fields) || !is_array($target_fields)) {
@@ -601,10 +599,13 @@ class GI_AI_Auto_Fill {
      * 日次制限のチェック
      */
     private function check_daily_limit() {
-        $daily_usage = $this->get_daily_usage();
-        $daily_limit = get_option('gi_ai_daily_limit', 100);
+        // 日次制限を無効化 - 常に制限内として処理
+        return true;
         
-        return $daily_usage < $daily_limit;
+        // 元の制限チェックロジック（無効化）
+        // $daily_usage = $this->get_daily_usage();
+        // $daily_limit = get_option('gi_ai_daily_limit', 100);
+        // return $daily_usage < $daily_limit;
     }
     
     /**
@@ -966,23 +967,13 @@ class GI_AI_Auto_Fill {
      */
     public function render_dashboard_widget() {
         $today_usage = $this->get_daily_usage();
-        $daily_limit = get_option('gi_ai_daily_limit', 100);
-        $usage_percentage = ($today_usage / $daily_limit) * 100;
         
         ?>
         <div class="gi-ai-dashboard-widget">
-            <p><strong>本日の利用状況</strong></p>
-            <div class="gi-ai-usage-bar">
-                <div class="gi-ai-usage-progress" style="width: <?php echo min($usage_percentage, 100); ?>%"></div>
-            </div>
-            <p><?php echo $today_usage; ?> / <?php echo $daily_limit; ?> 回使用 
-               (<?php echo round($usage_percentage, 1); ?>%)</p>
-            
-            <?php if ($usage_percentage > 80): ?>
-                <div class="notice notice-warning inline">
-                    <p>利用上限に近づいています。</p>
-                </div>
-            <?php endif; ?>
+            <p><strong>AI自動入力機能</strong></p>
+            <p>✅ 機能は正常に動作しています</p>
+            <p>📊 本日の使用回数: <?php echo $today_usage; ?> 回</p>
+            <p>🚀 制限なしで自由にご利用いただけます</p>
         </div>
         
         <style>
@@ -1060,10 +1051,10 @@ class GI_AI_Auto_Fill {
         $default_fields = json_decode(get_option('gi_ai_default_fields', '["ai_summary", "grant_target"]'), true);
         
         foreach ($posts as $post) {
-            // 日次制限をチェック
-            if (!$this->check_daily_limit()) {
-                break;
-            }
+            // 日次制限チェックを無効化
+            // if (!$this->check_daily_limit()) {
+            //     break;
+            // }
             
             // AI処理実行
             $result = $this->execute_ai_fill($post->ID, $default_fields);
