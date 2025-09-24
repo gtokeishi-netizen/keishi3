@@ -544,3 +544,77 @@ add_action('init', function() {
 add_action('wp_ajax_gi_ai_auto_fill', function() {
     error_log('AJAX gi_ai_auto_fill called - POST data: ' . print_r($_POST, true));
 }, 0); // 最高優先度で実行
+
+// =================================================================
+// 🛠️ 不足していたヘルパー関数の追加（緊急修正）
+// =================================================================
+
+/**
+ * 安全なHTML出力用ヘルパー関数
+ */
+if (!function_exists('gi_safe_escape')) {
+    function gi_safe_escape($value) {
+        return esc_html($value);
+    }
+}
+
+/**
+ * 安全なメタデータ取得用ヘルパー関数
+ * 注：data-processing.phpに既に定義済みのため、存在チェックで重複回避
+ */
+
+/**
+ * 申請ステータスのUI表示マッピング
+ */
+if (!function_exists('gi_map_application_status_ui')) {
+    function gi_map_application_status_ui($status) {
+        $status_map = array(
+            'open' => 'active',
+            'upcoming' => 'upcoming',
+            'closed' => 'closed',
+            'suspended' => 'closed',
+            'active' => 'active',
+            'ended' => 'closed'
+        );
+        return isset($status_map[$status]) ? $status_map[$status] : 'active';
+    }
+}
+
+/**
+ * 金額の統一フォーマット関数
+ */
+if (!function_exists('gi_format_amount_unified')) {
+    function gi_format_amount_unified($amount) {
+        if (empty($amount) || !is_numeric($amount)) {
+            return '－';
+        }
+        
+        $amount = intval($amount);
+        if ($amount >= 10000) {
+            return number_format($amount / 10000) . '万円';
+        }
+        return number_format($amount) . '円';
+    }
+}
+
+/**
+ * 日付の安全なフォーマット関数
+ */
+if (!function_exists('gi_safe_format_date')) {
+    function gi_safe_format_date($date, $format = 'Y年n月j日') {
+        if (empty($date)) {
+            return '－';
+        }
+        
+        // 文字列の場合はタイムスタンプに変換
+        if (is_string($date)) {
+            $timestamp = strtotime($date);
+            if ($timestamp === false) {
+                return '－';
+            }
+            return date($format, $timestamp);
+        }
+        
+        return date($format, $date);
+    }
+}

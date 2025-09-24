@@ -571,17 +571,16 @@ class GI_AI_Auto_Fill {
             'post_id' => $post_id
         );
         
-        // 基本ACFフィールドの取得
+        // 基本ACFフィールドの取得（正しいフィールド名に修正）
         $acf_fields = array(
-            'organization' => 'grant_organization',
-            'official_url' => 'grant_official_url',
-            'max_amount' => 'grant_max_amount',
-            'min_amount' => 'grant_min_amount',
-            'grant_period_start' => 'grant_period_start',
-            'grant_period_end' => 'grant_period_end',
-            'application_deadline' => 'application_deadline',
-            'target_business_type' => 'target_business_type',
-            'target_region' => 'target_region'
+            'organization' => 'organization',           // ✅ 修正済み
+            'official_url' => 'official_url',           // ✅ 修正済み
+            'max_amount' => 'max_amount',               // ✅ 修正済み
+            'min_amount' => 'min_amount',               // ✅ 修正済み
+            'deadline' => 'deadline',                   // ✅ 修正済み
+            'deadline_date' => 'deadline_date',         // ✅ 修正済み
+            'target_business_type' => 'grant_target',   // ✅ 修正済み
+            'target_region' => 'target_region'          // ✅ 修正済み
         );
         
         // ACF関数の存在確認
