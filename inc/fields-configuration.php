@@ -261,6 +261,19 @@ function gi_register_acf_field_groups() {
                 ),
             ),
             
+            // ========== AI自動生成フィールド ==========
+            array(
+                'key' => 'field_ai_summary',
+                'label' => 'AI概要',
+                'name' => 'ai_summary',
+                'type' => 'textarea',
+                'instructions' => 'AIが自動生成する助成金の概要です。手動で編集も可能です。',
+                'required' => 0,
+                'rows' => 4,
+                'maxlength' => 200,
+                'placeholder' => 'AI自動生成により、この助成金の概要が表示されます...',
+            ),
+            
             // ========== 対象・条件 ==========
             array(
                 'key' => 'field_grant_target',
