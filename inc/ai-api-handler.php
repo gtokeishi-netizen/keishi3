@@ -162,7 +162,10 @@ class GI_AI_API_Handler {
      * @return array 生成結果
      */
     public function generate_field_content($post_data, $target_field) {
+        error_log('AI API Handler: generate_field_content called for field: ' . $target_field);
+        
         if (empty($this->api_key)) {
+            error_log('AI API Handler: API key is empty');
             return array(
                 'success' => false,
                 'error' => 'APIキーが設定されていません',
@@ -171,9 +174,11 @@ class GI_AI_API_Handler {
         }
         
         try {
+            error_log('AI API Handler: Building prompt for ' . $target_field);
             $prompt = $this->build_prompt($post_data, $target_field);
             
             if (!$prompt) {
+                error_log('AI API Handler: Failed to build prompt');
                 return array(
                     'success' => false,
                     'error' => 'プロンプトの生成に失敗しました',
@@ -181,9 +186,11 @@ class GI_AI_API_Handler {
                 );
             }
             
+            error_log('AI API Handler: Making API request for ' . $target_field);
             $api_response = $this->make_api_request($prompt);
             
             if ($api_response['success']) {
+                error_log('AI API Handler: API request successful for ' . $target_field);
                 $content = $this->extract_content_from_response($api_response['data'], $target_field);
                 
                 return array(
@@ -193,6 +200,7 @@ class GI_AI_API_Handler {
                     'response_time' => $api_response['response_time']
                 );
             } else {
+                error_log('AI API Handler: API request failed for ' . $target_field . ': ' . $api_response['error']);
                 return array(
                     'success' => false,
                     'error' => $api_response['error'],
@@ -201,11 +209,11 @@ class GI_AI_API_Handler {
             }
             
         } catch (Exception $e) {
-            error_log('GI AI API Handler Error: ' . $e->getMessage());
+            error_log('GI AI API Handler Error: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
             
             return array(
                 'success' => false,
-                'error' => '予期しないエラーが発生しました',
+                'error' => '予期しないエラーが発生しました: ' . $e->getMessage(),
                 'tokens_used' => 0
             );
         }
@@ -219,12 +227,17 @@ class GI_AI_API_Handler {
      * @return string|false プロンプト文字列
      */
     private function build_prompt($post_data, $target_field) {
+        error_log('AI API Handler: build_prompt called for field: ' . $target_field);
+        
         $system_prompt = $this->get_system_prompt();
         $field_prompt = $this->get_field_specific_prompt($target_field, $post_data);
         
         if (!$field_prompt) {
+            error_log('AI API Handler: Failed to get field specific prompt for ' . $target_field);
             return false;
         }
+        
+        error_log('AI API Handler: Prompt built successfully for ' . $target_field);
         
         return array(
             'system' => $system_prompt,
@@ -596,6 +609,65 @@ class GI_AI_API_Handler {
 - 申請前の準備期間の目安
 
 300文字以内で、分かりやすい日本語で記述してください。";
+    }
+    
+    /**
+     * タイトルプロンプト（SEO・コンテキスト対応版）
+     */
+    private function get_title_prompt($base_info) {
+        return "以下の助成金について、SEOを意識した魅力的なタイトルを40文字以内で作成してください：
+
+{$base_info}
+
+【要求事項】
+- 助成金の特徴や目的を明確に表現
+- 「助成金」「補助金」等のキーワードを自然に含める
+- 対象者や金額などの具体的情報を含める
+- 検索されやすく、クリックしたくなるタイトル
+- 既存情報がある場合は整合性を保つ
+
+【SEO配慮】
+- 具体的な業種名・地域名・金額を含める
+- ユーザーが検索しそうなフレーズを使用
+- 読みやすく、理解しやすい表現
+
+40文字以内で、検索ランキングとクリック率を向上させるタイトルを作成してください。";
+    }
+    
+    /**
+     * 本文プロンプト（SEO・コンテキスト対応版）
+     */
+    private function get_content_prompt($base_info) {
+        return "以下の助成金について、SEOを意識した詳細な本文コンテンツをHTML形式で1,200文字以内で作成してください：
+
+{$base_info}
+
+【構造化要件】
+- <h2>、<h3>タグで適切な見出し構造を作る
+- <p>タグで段落を明確に分ける
+- <ul>、<ol>、<li>タグで情報をリスト化
+- <strong>、<em>タグで重要ポイントを強調
+
+【コンテンツ要件】
+- 助成金の概要と目的の詳細説明
+- 対象者・対象事業の具体的な条件
+- 助成金額や率の詳細
+- 申請手順や必要書類の案内
+- 注意事項やポイント
+- 問い合わせ先情報
+
+【SEO配慮】
+- 「助成金」「補助金」「支援制度」等のキーワードを自然に配置
+- 具体的な業種名、地域名、金額を含める
+- ユーザーの検索意図に合致した実用的情報
+- 見出しにキーワードを効果的に配置
+
+【コンテキスト活用】
+- 既存の入力済み情報がある場合は整合性を保つ
+- 他フィールドの情報と矛盾しない内容
+- 全体として統一感のある情報提供
+
+1,200文字以内で、ユーザーにとって有用でSEO効果の高い本文コンテンツを作成してください。";
     }
     
     /**

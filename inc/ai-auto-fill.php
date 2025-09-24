@@ -385,10 +385,11 @@ class GI_AI_Auto_Fill {
      */
     private function execute_ai_fill($post_id, $target_fields) {
         try {
-            error_log('AI Auto Fill: execute_ai_fill started for post_id=' . $post_id);
+            error_log('AI Auto Fill: execute_ai_fill started for post_id=' . $post_id . ' with fields: ' . implode(', ', $target_fields));
             
             $post = get_post($post_id);
             if (!$post) {
+                error_log('AI Auto Fill: Post not found: ' . $post_id);
                 return array(
                     'success' => false,
                     'updated_fields' => array(),
@@ -406,6 +407,7 @@ class GI_AI_Auto_Fill {
             error_log('AI Auto Fill: Collecting post data');
             $post_data = $this->collect_post_data($post_id);
             if (!is_array($post_data)) {
+                error_log('AI Auto Fill: Failed to collect post data');
                 $errors['general'] = '投稿データの収集に失敗しました';
                 return array(
                     'success' => false,
@@ -416,6 +418,8 @@ class GI_AI_Auto_Fill {
                 );
             }
             
+            error_log('AI Auto Fill: Post data collected successfully: ' . json_encode(array_keys($post_data)));
+            
             // バックアップの作成
             error_log('AI Auto Fill: Creating backup');
             $this->create_backup($post_id, $target_fields);
@@ -423,6 +427,8 @@ class GI_AI_Auto_Fill {
         // フィールド別処理
         foreach ($target_fields as $field_name) {
             try {
+                error_log('AI Auto Fill: Processing field: ' . $field_name);
+                
                 // タイトル・本文フィールドの特別処理
                 if ($field_name === 'post_title') {
                     $current_value = $post->post_title;
@@ -432,8 +438,10 @@ class GI_AI_Auto_Fill {
                     // ACFフィールドの処理
                     if (function_exists('get_field')) {
                         $current_value = get_field($field_name, $post_id);
+                        error_log('AI Auto Fill: ACF get_field for ' . $field_name . ': ' . (!empty($current_value) ? 'has content' : 'empty'));
                     } else {
                         $current_value = get_post_meta($post_id, $field_name, true);
+                        error_log('AI Auto Fill: get_post_meta for ' . $field_name . ': ' . (!empty($current_value) ? 'has content' : 'empty'));
                     }
                 }
                 
@@ -441,43 +449,69 @@ class GI_AI_Auto_Fill {
                 // 以前の動作: if (!empty($current_value) && trim(strip_tags($current_value)) !== '') { continue; }
                 // 新しい動作: 既存フィールドも再生成対象とし、既存コンテンツをコンテキストとして活用
                 
+                // APIハンドラーの存在確認
+                if (!$this->api_handler) {
+                    error_log('AI Auto Fill: API handler is not initialized');
+                    $errors[$field_name] = 'APIハンドラーが初期化されていません';
+                    continue;
+                }
+                
                 // AI生成実行
+                error_log('AI Auto Fill: Calling API handler for field: ' . $field_name);
                 $api_result = $this->api_handler->generate_field_content($post_data, $field_name);
+                error_log('AI Auto Fill: API result for ' . $field_name . ': ' . ($api_result['success'] ? 'success' : 'failed - ' . $api_result['error']));
                 
                 if ($api_result['success']) {
+                    error_log('AI Auto Fill: Generated content for ' . $field_name . ': ' . mb_substr($api_result['content'], 0, 100) . '...');
+                    
                     // 生成されたコンテンツの検証
                     $validation_result = $this->validate_generated_content($field_name, $api_result['content']);
                     
                     if ($validation_result['valid']) {
+                        error_log('AI Auto Fill: Content validation passed for ' . $field_name);
+                        
                         // フィールドの更新
+                        $update_success = false;
                         if ($field_name === 'post_title') {
                             // タイトル更新
-                            wp_update_post(array(
+                            $update_result = wp_update_post(array(
                                 'ID' => $post_id,
                                 'post_title' => $api_result['content']
                             ));
+                            $update_success = !is_wp_error($update_result) && $update_result > 0;
                         } elseif ($field_name === 'post_content') {
                             // 本文更新
-                            wp_update_post(array(
+                            $update_result = wp_update_post(array(
                                 'ID' => $post_id,
                                 'post_content' => $api_result['content']
                             ));
+                            $update_success = !is_wp_error($update_result) && $update_result > 0;
                         } else {
                             // ACFフィールド更新
                             if (function_exists('update_field')) {
-                                update_field($field_name, $api_result['content'], $post_id);
+                                $update_success = update_field($field_name, $api_result['content'], $post_id);
+                                error_log('AI Auto Fill: ACF update_field result for ' . $field_name . ': ' . ($update_success ? 'success' : 'failed'));
                             } else {
-                                update_post_meta($post_id, $field_name, $api_result['content']);
+                                $update_success = update_post_meta($post_id, $field_name, $api_result['content']);
+                                error_log('AI Auto Fill: update_post_meta result for ' . $field_name . ': ' . ($update_success ? 'success' : 'failed'));
                             }
                         }
                         
-                        $updated_fields[$field_name] = $api_result['content'];
-                        $total_tokens += $api_result['tokens_used'];
+                        if ($update_success) {
+                            $updated_fields[$field_name] = $api_result['content'];
+                            $total_tokens += $api_result['tokens_used'];
+                            error_log('AI Auto Fill: Successfully updated field ' . $field_name);
+                        } else {
+                            $errors[$field_name] = 'フィールドの更新に失敗しました';
+                            error_log('AI Auto Fill: Failed to update field ' . $field_name);
+                        }
                     } else {
                         $errors[$field_name] = $validation_result['error'];
+                        error_log('AI Auto Fill: Content validation failed for ' . $field_name . ': ' . $validation_result['error']);
                     }
                 } else {
                     $errors[$field_name] = $api_result['error'];
+                    error_log('AI Auto Fill: API generation failed for ' . $field_name . ': ' . $api_result['error']);
                 }
                 
                 // API制限対応の待機
@@ -487,6 +521,7 @@ class GI_AI_Auto_Fill {
                 
             } catch (Exception $e) {
                 $errors[$field_name] = 'フィールド処理エラー: ' . $e->getMessage();
+                error_log('AI Auto Fill: Exception in field processing for ' . $field_name . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
             }
         }
         
