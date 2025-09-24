@@ -302,9 +302,9 @@ class GI_AI_Auto_Fill {
                     $current_value = get_field($field_name, $post_id);
                 }
                 
-                if (!empty($current_value) && trim(strip_tags($current_value)) !== '') {
-                    continue; // 既に値が入力されている場合はスキップ
-                }
+                // 【重要変更】既に値が入力されている場合もスキップしない - 再生成を可能にする
+                // 以前の動作: if (!empty($current_value) && trim(strip_tags($current_value)) !== '') { continue; }
+                // 新しい動作: 既存フィールドも再生成対象とし、既存コンテンツをコンテキストとして活用
                 
                 // AI生成実行
                 $api_result = $this->api_handler->generate_field_content($post_data, $field_name);
@@ -364,7 +364,8 @@ class GI_AI_Auto_Fill {
     }
     
     /**
-     * 投稿データの収集
+     * 投稿データの収集（拡張版）
+     * 既存フィールドの内容をコンテキストとして収集し、AIにより良い生成の根拠を提供
      */
     private function collect_post_data($post_id) {
         $post = get_post($post_id);
@@ -376,7 +377,7 @@ class GI_AI_Auto_Fill {
             'post_id' => $post_id
         );
         
-        // ACFフィールドの取得
+        // 基本ACFフィールドの取得
         $acf_fields = array(
             'organization' => 'grant_organization',
             'official_url' => 'grant_official_url',
@@ -394,6 +395,35 @@ class GI_AI_Auto_Fill {
             if ($value) {
                 $data[$key] = $value;
             }
+        }
+        
+        // 【新機能】AI生成対象フィールドの既存内容をコンテキストとして追加
+        $ai_target_fields = array(
+            'ai_summary' => 'AI概要',
+            'grant_target' => '対象者・対象事業', 
+            'eligible_expenses' => '対象経費',
+            'grant_difficulty' => '申請難易度',
+            'required_documents' => '必要書類',
+            'application_method' => '申請方法',
+            'contact_info' => '問い合わせ先',
+            'amount_note' => '金額備考',
+            'deadline_note' => '締切備考'
+        );
+        
+        $existing_content = array();
+        foreach ($ai_target_fields as $field_name => $field_label) {
+            $value = get_field($field_name, $post_id);
+            if (!empty($value) && trim(strip_tags($value)) !== '') {
+                $existing_content[$field_name] = array(
+                    'label' => $field_label,
+                    'value' => $value
+                );
+            }
+        }
+        
+        // 既存コンテンツをデータに追加
+        if (!empty($existing_content)) {
+            $data['existing_ai_content'] = $existing_content;
         }
         
         return $data;

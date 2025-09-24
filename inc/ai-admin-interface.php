@@ -240,8 +240,19 @@ class GI_AI_Admin_Interface {
                 <div class="gi-ai-options">
                     <h4>処理オプション</h4>
                     <label class="gi-ai-option">
-                        <input type="checkbox" id="gi-ai-skip-filled" checked>
+                        <input type="checkbox" id="gi-ai-skip-filled">
                         既に入力済みのフィールドはスキップする
+                        <span class="description">（チェックを外すと既存フィールドも再生成対象になります）</span>
+                    </label>
+                    <label class="gi-ai-option">
+                        <input type="checkbox" id="gi-ai-seo-mode" checked>
+                        SEO最適化モードを有効にする
+                        <span class="description">（検索エンジンに評価されやすいコンテンツを生成）</span>
+                    </label>
+                    <label class="gi-ai-option">
+                        <input type="checkbox" id="gi-ai-context-mode" checked>
+                        コンテキスト参照モードを有効にする
+                        <span class="description">（既存フィールドの内容を参考にして生成）</span>
                     </label>
                     <label class="gi-ai-option">
                         <input type="checkbox" id="gi-ai-preview-mode" checked>
@@ -310,13 +321,13 @@ class GI_AI_Admin_Interface {
                            name="gi_ai_fields[]" 
                            value="<?php echo esc_attr($field_name); ?>"
                            class="gi-ai-field-checkbox"
-                           <?php checked($is_default_selected && !$has_content); ?>
-                           <?php disabled($has_content); ?>>
+                           data-has-content="<?php echo $has_content ? 'true' : 'false'; ?>"
+                           <?php checked($is_default_selected); ?>>
                     
                     <span class="field-name"><?php echo esc_html($field_info['label']); ?></span>
                     
                     <?php if ($has_content): ?>
-                        <span class="field-status filled">入力済み</span>
+                        <span class="field-status filled">入力済み・再生成可能</span>
                     <?php else: ?>
                         <span class="field-status empty">未入力</span>
                     <?php endif; ?>
@@ -819,6 +830,21 @@ class GI_AI_Admin_Interface {
                 });
             });
             
+            // スキップオプションの制御
+            $('#gi-ai-skip-filled').on('change', function() {
+                var skipFilled = $(this).is(':checked');
+                $('.gi-ai-field-checkbox').each(function() {
+                    var hasContent = $(this).data('has-content') === 'true';
+                    if (skipFilled && hasContent) {
+                        $(this).prop('disabled', true).prop('checked', false);
+                        $(this).closest('.gi-ai-field-label').addClass('disabled-field');
+                    } else {
+                        $(this).prop('disabled', false);
+                        $(this).closest('.gi-ai-field-label').removeClass('disabled-field');
+                    }
+                });
+            }).trigger('change'); // 初期化時に実行
+            
             // 一括選択ボタン
             $('#gi-ai-select-all').on('click', function() {
                 $('.gi-ai-field-checkbox:not(:disabled)').prop('checked', true);
@@ -1002,6 +1028,16 @@ class GI_AI_Admin_Interface {
             border-color: #c3c4c7;
         }
         
+        .gi-ai-field-label.disabled-field {
+            background: #f6f7f7;
+            border-color: #ddd;
+            opacity: 0.6;
+        }
+        
+        .gi-ai-field-label.disabled-field .field-name {
+            color: #666;
+        }
+        
         .gi-ai-field-checkbox {
             margin-right: 8px !important;
         }
@@ -1019,8 +1055,8 @@ class GI_AI_Admin_Interface {
         }
         
         .field-status.filled {
-            background: #d1e7dd;
-            color: #0f5132;
+            background: #e7f3ff;
+            color: #0066cc;
         }
         
         .field-status.empty {
@@ -1066,12 +1102,21 @@ class GI_AI_Admin_Interface {
         
         .gi-ai-option {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
             font-size: 12px;
+            line-height: 1.4;
         }
         
         .gi-ai-option input {
             margin-right: 6px;
+        }
+        
+        .gi-ai-option .description {
+            display: block;
+            color: #666;
+            font-size: 11px;
+            margin-top: 2px;
+            margin-left: 20px;
         }
         
         .gi-ai-actions {
