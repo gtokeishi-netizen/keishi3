@@ -244,21 +244,28 @@ class GI_AI_API_Handler {
 【基本方針】
 - 正確で実用的な情報を提供する
 - 日本の助成金制度の一般的な傾向に基づく
-- 過度に詳細な情報は避け、概要レベルにとどめる
-- HTML形式が指定された場合は適切なマークアップを使用
+- 自然で読みやすい日本語を使用する
 - 文字数制限を必ず遵守する
+- 不自然な文字や記号の連続使用は避ける
+
+【文章品質基準】
+- 「令和○年度」「平成○年度」などの年号は使用しない
+- 「、、、」「。。。」などの記号の連続は使用しない
+- 適切な敬語と丁寧語を使用する
+- 読者にとって分かりやすい表現を心がける
+- 具体的で実用的な内容にする
 
 【出力形式】
 - 各フィールドの内容のみを出力
-- 余計な説明や前置きは不要
-- 指定された文字数制限を遵守
+- 余計な説明や前置きは一切不要
+- 指定された文字数制限を厳格に遵守
 - HTMLタグは必要最小限に留める
 
-【品質基準】
-- 読みやすい日本語で記述
-- 具体的で実用的な内容
-- 一般的な助成金制度に準拠した内容
-- 事実に基づいた推測範囲での情報提供";
+【避けるべき表現】
+- 年号の記載（令和、平成など）
+- 記号の連続使用（、、、　。。。　…… など）
+- 過度に硬い官僚的表現
+- 曖昧で具体性に欠ける表現";
     }
     
     /**
@@ -730,6 +737,9 @@ class GI_AI_API_Handler {
      * @return string 処理後のコンテンツ
      */
     private function post_process_content($content, $field_name) {
+        // 基本的なクリーニング処理
+        $content = $this->clean_generated_content($content, $field_name);
+        
         // 選択肢フィールドの値検証
         if ($field_name === 'grant_difficulty') {
             $allowed_values = array('easy', 'normal', 'hard', 'expert');
@@ -746,7 +756,7 @@ class GI_AI_API_Handler {
         }
         
         // HTMLフィールドのサニタイズ
-        $html_fields = array('grant_target', 'eligible_expenses', 'required_documents');
+        $html_fields = array('grant_target', 'eligible_expenses', 'required_documents', 'post_content');
         if (in_array($field_name, $html_fields)) {
             $content = $this->sanitize_html_content($content);
         }
@@ -755,6 +765,85 @@ class GI_AI_API_Handler {
         $content = $this->apply_length_limit($content, $field_name);
         
         return $content;
+    }
+    
+    /**
+     * 生成コンテンツのクリーニング
+     * 
+     * @param string $content 生成されたコンテンツ
+     * @param string $field_name フィールド名
+     * @return string クリーニング後のコンテンツ
+     */
+    private function clean_generated_content($content, $field_name) {
+        // 基本的なトリミング
+        $content = trim($content);
+        
+        // 不自然な文字パターンの除去
+        $problematic_patterns = array(
+            '/令和\d+年度?/',           // 令和○年度
+            '/平成\d+年度?/',           // 平成○年度  
+            '/、{2,}/',                 // 、、、などの連続
+            '/。{2,}/',                 // 。。。などの連続
+            '/…{2,}/',                  // ……などの連続
+            '/・{3,}/',                 // ・・・などの連続
+            '/\s{3,}/',                 // 空白の連続（3個以上）
+            '/\n{3,}/',                 // 改行の連続（3個以上）
+        );
+        
+        $replacements = array(
+            '',                         // 年号削除
+            '',                         // 年号削除
+            '、',                       // 単一の読点に
+            '。',                       // 単一の句点に
+            '…',                        // 単一の三点リーダーに
+            '・',                       // 単一の中黒に
+            ' ',                        // 単一の空白に
+            "\n\n",                     // 改行は最大2個まで
+        );
+        
+        $content = preg_replace($problematic_patterns, $replacements, $content);
+        
+        // タイトルフィールドの特別処理
+        if ($field_name === 'post_title') {
+            $content = $this->clean_title_content($content);
+        }
+        
+        // 前後の引用符や括弧の除去
+        $content = trim($content, '"\'「」『』()（）【】');
+        
+        return $content;
+    }
+    
+    /**
+     * タイトル専用のクリーニング
+     * 
+     * @param string $title タイトル
+     * @return string クリーニング後のタイトル
+     */
+    private function clean_title_content($title) {
+        // 不要な前置詞や接続詞の除去
+        $unwanted_phrases = array(
+            'について',
+            'に関して',
+            'のご案内',
+            '【新着】',
+            '【重要】',
+            '【お知らせ】',
+        );
+        
+        foreach ($unwanted_phrases as $phrase) {
+            $title = str_replace($phrase, '', $title);
+        }
+        
+        // 末尾の不自然な文字の除去
+        $title = rtrim($title, '、。：:');
+        
+        // 文字数が極端に短い場合のデフォルト処理
+        if (mb_strlen($title, 'UTF-8') < 8) {
+            $title = '助成金制度のご案内';
+        }
+        
+        return trim($title);
     }
     
     /**
@@ -1498,17 +1587,23 @@ class GI_AI_API_Handler {
 {$info_text}
 
 【要件】
-- 40文字以内で作成
-- 助成金の特徴を表現
-- SEOを意識したキーワードを含める
-- 読者の関心を引く表現
-- 「助成金」「補助金」などの単語を含める
+- 35文字以内で作成してください
+- 助成金の特徴を表現してください
+- 読者の関心を引く分かりやすい表現にしてください
+- 「助成金」「補助金」「支援制度」のいずれかを含めてください
+- 不自然な文字（令、、、、など）は使用しないでください
+- 完全なタイトルのみを出力してください
 
-【出力例】
-「中小企業向け設備投資助成金 - 最大1000万円の支援制度」
-「創業支援補助金 - 新規事業立ち上げに最大500万円」
+【良い例】
+中小企業向け設備投資助成金 最大1000万円
+IT導入補助金 デジタル化支援制度
+創業支援補助金 新規事業立ち上げ資金
 
-タイトルのみを出力してください：";
+【避けるべき例】
+令和○年度○○事業（年号は不要）
+、、、や。。。などの記号の連続
+
+タイトルのみを出力してください（説明文や前置きは不要）：";
     }
     
     /**
@@ -1525,32 +1620,38 @@ class GI_AI_API_Handler {
 {$info_text}
 
 【要件】
-- 800-1200文字程度
-- HTMLタグ（p, h2, h3, ul, li, strong）を適切に使用
-- 読みやすい段落構成
-- 具体的で実用的な内容
-- 申請を促す前向きな表現
+- 800-1200文字程度で記載してください
+- HTMLタグ（p, h2, h3, ul, li, strong）を適切に使用してください
+- 読みやすい段落構成にしてください
+- 具体的で実用的な内容を記載してください
+- 申請を促す前向きな表現を心がけてください
+- 不自然な文字（令、、、、など）や記号の連続使用は避けてください
+- 年号（令和○年度など）は使用しないでください
 
-【必須セクション】
+【必須セクション構成】
 1. 制度の概要・目的
-2. 対象となる事業者・事業内容
+2. 対象となる事業者・事業内容  
 3. 助成金額・助成率
-4. 申請の流れ・スケジュール
-5. 注意事項・ポイント
+4. 申請の流れ・必要書類
+5. 申請のポイント・注意事項
 
-【出力例の構造】
+【記載形式例】
 <h2>制度概要</h2>
-<p>この助成金は...</p>
+<p>この助成金は中小企業の○○を支援することを目的とした制度です。</p>
 
 <h2>対象事業者</h2>
 <ul>
-<li>中小企業...</li>
+<li>中小企業者（従業員数○名以下）</li>
+<li>○○業を営む事業者</li>
 </ul>
 
 <h2>助成内容</h2>
-<p><strong>助成額:</strong> ...</p>
+<p><strong>助成額:</strong> 上限○○万円（対象経費の○○％以内）</p>
 
-本文のみを出力してください：";
+【出力注意】
+- 本文のHTMLコードのみを出力してください
+- 説明文や前置きは不要です
+- 不自然な記号の連続は使用しないでください";
     }
 }
 

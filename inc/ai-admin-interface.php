@@ -38,6 +38,20 @@ class GI_AI_Admin_Interface {
      */
     private function init_field_definitions() {
         $this->field_definitions = array(
+            'post_title' => array(
+                'label' => '投稿タイトル',
+                'type' => 'text',
+                'priority' => 'high',
+                'max_length' => 40,
+                'description' => '魅力的で分かりやすい投稿タイトルを生成'
+            ),
+            'post_content' => array(
+                'label' => '投稿本文',
+                'type' => 'wysiwyg',
+                'priority' => 'high',
+                'max_length' => 1200,
+                'description' => '詳細で構造化された本文コンテンツを生成'
+            ),
             'ai_summary' => array(
                 'label' => 'AI概要',
                 'type' => 'textarea',
@@ -277,7 +291,14 @@ class GI_AI_Admin_Interface {
                 continue;
             }
             
-            $current_value = get_field($field_name, $post->ID);
+            // タイトル・本文フィールドの特別処理
+            if ($field_name === 'post_title') {
+                $current_value = $post->post_title;
+            } elseif ($field_name === 'post_content') {
+                $current_value = $post->post_content;
+            } else {
+                $current_value = get_field($field_name, $post->ID);
+            }
             $has_content = !empty($current_value) && trim(strip_tags($current_value)) !== '';
             $is_default_selected = in_array($field_name, $this->get_default_fields());
             
@@ -540,7 +561,16 @@ class GI_AI_Admin_Interface {
             }
             
             $field_info = $this->field_definitions[$field_name];
-            $current_value = get_field($field_name, $post_id);
+            
+            // 現在値の取得（タイトル・本文の特別処理）
+            if ($field_name === 'post_title') {
+                $current_value = get_post($post_id)->post_title;
+            } elseif ($field_name === 'post_content') {
+                $current_value = get_post($post_id)->post_content;
+            } else {
+                $current_value = get_field($field_name, $post_id);
+            }
+            
             $char_count = mb_strlen(strip_tags($content), 'UTF-8');
             $max_length = isset($field_info['max_length']) ? $field_info['max_length'] : null;
             
@@ -613,7 +643,20 @@ class GI_AI_Admin_Interface {
         
         foreach ($field_data as $field_name => $content) {
             if (isset($this->field_definitions[$field_name])) {
-                update_field($field_name, $content, $post_id);
+                // タイトル・本文フィールドの特別処理
+                if ($field_name === 'post_title') {
+                    wp_update_post(array(
+                        'ID' => $post_id,
+                        'post_title' => $content
+                    ));
+                } elseif ($field_name === 'post_content') {
+                    wp_update_post(array(
+                        'ID' => $post_id,
+                        'post_content' => $content
+                    ));
+                } else {
+                    update_field($field_name, $content, $post_id);
+                }
                 $updated_fields[] = $field_name;
             }
         }
@@ -628,13 +671,13 @@ class GI_AI_Admin_Interface {
      * デフォルト選択フィールドの取得
      */
     private function get_default_fields() {
-        $default = get_option('gi_ai_default_fields', array('ai_summary', 'grant_target', 'eligible_expenses'));
+        $default = get_option('gi_ai_default_fields', array('post_title', 'ai_summary', 'grant_target'));
         
         if (is_string($default)) {
             $default = json_decode($default, true);
         }
         
-        return is_array($default) ? $default : array();
+        return is_array($default) ? $default : array('post_title', 'ai_summary', 'grant_target');
     }
     
     /**
@@ -788,7 +831,7 @@ class GI_AI_Admin_Interface {
                 $('.gi-ai-field-checkbox').prop('checked', false);
                 $('.gi-ai-field-checkbox:not(:disabled)').each(function() {
                     var fieldName = $(this).val();
-                    var highPriorityFields = ['ai_summary', 'grant_target', 'eligible_expenses'];
+                    var highPriorityFields = ['post_title', 'post_content', 'ai_summary', 'grant_target', 'eligible_expenses'];
                     if (highPriorityFields.includes(fieldName)) {
                         $(this).prop('checked', true);
                     }
