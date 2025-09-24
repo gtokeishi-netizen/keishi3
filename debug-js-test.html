@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScriptデバッグテスト</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #f0f0f0; }
+        .test-box { background: white; padding: 15px; margin: 10px 0; border: 1px solid #ccc; }
+        .error { background: #ffdddd; border-color: #ff0000; }
+        .success { background: #ddffdd; border-color: #00aa00; }
+        button { padding: 10px 20px; margin: 5px; font-size: 14px; }
+        #log { background: #f8f8f8; padding: 10px; border: 1px solid #ccc; height: 200px; overflow-y: scroll; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 JavaScript動作テスト</h1>
+    
+    <div class="test-box">
+        <h2>1. 基本JavaScriptテスト</h2>
+        <button onclick="testBasicJS()">基本JSテスト</button>
+        <div id="basic-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h2>2. jQueryテスト</h2>
+        <button onclick="testJQuery()">jQueryテスト</button>
+        <div id="jquery-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h2>3. AJAX接続テスト（WordPress風）</h2>
+        <button onclick="testAjaxConnection()">AJAX接続テスト</button>
+        <div id="ajax-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h2>4. WordPress AI変数テスト</h2>
+        <button onclick="testWordPressVars()">WordPress変数確認</button>
+        <div id="wp-vars-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h2>5. コンソールログテスト</h2>
+        <button onclick="testConsoleLog()">コンソールログ出力</button>
+        <p>F12 > コンソールタブを開いてログを確認してください</p>
+    </div>
+    
+    <div class="test-box">
+        <h2>📋 ログ出力</h2>
+        <div id="log"></div>
+        <button onclick="clearLog()">ログクリア</button>
+    </div>
+
+    <!-- jQuery CDN -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <script>
+        // ログ関数
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[Debug] ${message}`);
+        }
+
+        // 1. 基本JavaScriptテスト
+        function testBasicJS() {
+            try {
+                log('基本JavaScriptテスト開始');
+                
+                // 基本的な処理
+                const testData = {
+                    timestamp: new Date().toISOString(),
+                    userAgent: navigator.userAgent,
+                    url: window.location.href
+                };
+                
+                document.getElementById('basic-result').innerHTML = 
+                    '<div class="success">✅ JavaScript正常動作<br>' +
+                    'タイムスタンプ: ' + testData.timestamp + '</div>';
+                
+                log('✅ 基本JavaScriptテスト成功');
+            } catch (error) {
+                document.getElementById('basic-result').innerHTML = 
+                    '<div class="error">❌ JavaScriptエラー: ' + error.message + '</div>';
+                log('❌ 基本JavaScriptエラー: ' + error.message);
+            }
+        }
+
+        // 2. jQueryテスト
+        function testJQuery() {
+            try {
+                log('jQueryテスト開始');
+                
+                if (typeof jQuery !== 'undefined') {
+                    // jQueryが利用可能
+                    $('#jquery-result').html('<div class="success">✅ jQuery利用可能 (バージョン: ' + jQuery.fn.jquery + ')</div>');
+                    log('✅ jQuery利用可能: v' + jQuery.fn.jquery);
+                    
+                    // jQuery AJAXテスト用の準備
+                    window.jQueryAvailable = true;
+                } else {
+                    $('#jquery-result').html('<div class="error">❌ jQueryが読み込まれていません</div>');
+                    log('❌ jQuery読み込み失敗');
+                    window.jQueryAvailable = false;
+                }
+            } catch (error) {
+                document.getElementById('jquery-result').innerHTML = 
+                    '<div class="error">❌ jQueryテストエラー: ' + error.message + '</div>';
+                log('❌ jQueryテストエラー: ' + error.message);
+            }
+        }
+
+        // 3. AJAX接続テスト
+        function testAjaxConnection() {
+            log('AJAX接続テスト開始');
+            
+            if (!window.jQueryAvailable) {
+                document.getElementById('ajax-result').innerHTML = 
+                    '<div class="error">❌ jQueryが必要です。先にjQueryテストを実行してください。</div>';
+                return;
+            }
+
+            // WordPress風のAJAX設定をシミュレート
+            const ajaxData = {
+                action: 'gi_ai_test_connection',
+                nonce: 'test_nonce_123',
+                test_data: 'connection_check'
+            };
+
+            log('送信データ: ' + JSON.stringify(ajaxData));
+
+            $.ajax({
+                url: '/wp-admin/admin-ajax.php', // 通常のWordPressエンドポイント
+                type: 'POST',
+                data: ajaxData,
+                timeout: 10000,
+                beforeSend: function() {
+                    $('#ajax-result').html('<div>🔄 AJAX送信中...</div>');
+                    log('AJAX送信開始');
+                },
+                success: function(response) {
+                    $('#ajax-result').html('<div class="success">✅ AJAX成功<br>レスポンス: ' + JSON.stringify(response) + '</div>');
+                    log('✅ AJAX成功: ' + JSON.stringify(response));
+                },
+                error: function(xhr, status, error) {
+                    let errorMsg = '❌ AJAX失敗<br>';
+                    errorMsg += 'Status: ' + status + '<br>';
+                    errorMsg += 'Error: ' + error + '<br>';
+                    errorMsg += 'Response Code: ' + xhr.status + '<br>';
+                    
+                    if (xhr.status === 404) {
+                        errorMsg += '<br>⚠️ WordPress環境ではないため admin-ajax.php が見つかりません。<br>';
+                        errorMsg += 'これは正常です。実際のWordPress環境で再テストしてください。';
+                    }
+                    
+                    $('#ajax-result').html('<div class="error">' + errorMsg + '</div>');
+                    log('❌ AJAX失敗: ' + status + ' - ' + error);
+                },
+                complete: function() {
+                    log('AJAX処理完了');
+                }
+            });
+        }
+
+        // 4. WordPress変数テスト
+        function testWordPressVars() {
+            log('WordPress変数テスト開始');
+            
+            let result = '<h4>WordPress JavaScript変数の確認:</h4>';
+            
+            // 通常のWordPress環境で定義される変数をチェック
+            const wpVars = [
+                'gi_ai_ajax',
+                'ajax_object', 
+                'wp_ajax',
+                'adminajax'
+            ];
+            
+            wpVars.forEach(varName => {
+                if (typeof window[varName] !== 'undefined') {
+                    result += `✅ ${varName}: 定義済み<br>`;
+                    log(`✅ ${varName}変数が定義されています`);
+                    
+                    // 詳細情報も表示
+                    try {
+                        const varContent = JSON.stringify(window[varName]);
+                        result += `&nbsp;&nbsp;内容: ${varContent.substring(0, 100)}...<br>`;
+                    } catch (e) {
+                        result += `&nbsp;&nbsp;内容: [オブジェクト]<br>`;
+                    }
+                } else {
+                    result += `❌ ${varName}: 未定義<br>`;
+                    log(`❌ ${varName}変数が未定義`);
+                }
+            });
+            
+            // 実際のWordPress環境でない場合の説明
+            result += '<br><strong>⚠️ 注意:</strong> 現在はWordPress環境外のため、これらの変数は通常未定義です。<br>';
+            result += 'WordPress管理画面の投稿編集ページでこのテストを実行してください。';
+            
+            document.getElementById('wp-vars-result').innerHTML = '<div class="test-box">' + result + '</div>';
+        }
+
+        // 5. コンソールログテスト
+        function testConsoleLog() {
+            log('コンソールログテスト開始');
+            
+            // 各種ログレベルをテスト
+            console.log('🔍 [TEST] 通常ログ - これが表示されればコンソールログは機能しています');
+            console.info('ℹ️ [TEST] 情報ログ');
+            console.warn('⚠️ [TEST] 警告ログ'); 
+            console.error('❌ [TEST] エラーログ');
+            console.group('📋 [TEST] グループログ開始');
+            console.log('   - グループ内のログ1');
+            console.log('   - グループ内のログ2'); 
+            console.groupEnd();
+            
+            // WordPress AI風のデバッグログ
+            console.log('[AI Debug] 送信データ:', {
+                action: 'gi_ai_auto_fill',
+                nonce: 'test_nonce',
+                post_id: 123,
+                target_fields: ['ai_summary', 'grant_target']
+            });
+            
+            console.log('[AI Debug] AJAX URL:', '/wp-admin/admin-ajax.php');
+            console.log('[AI Debug] レスポンス受信:', {
+                success: true,
+                data: {
+                    updated_fields: {
+                        'ai_summary': 'テスト生成内容...'
+                    }
+                }
+            });
+            
+            log('✅ コンソールログテスト完了（F12で確認してください）');
+        }
+
+        // ログクリア
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+            console.clear();
+            log('ログをクリアしました');
+        }
+
+        // ページ読み込み時の初期化
+        window.addEventListener('load', function() {
+            log('ページ読み込み完了');
+            log('🎯 テストの手順:');
+            log('1. 各テストボタンを順番にクリック');
+            log('2. F12キーで開発者ツールを開く');
+            log('3. コンソールタブでログを確認');
+            log('4. WordPress環境での動作と比較');
+        });
+        
+        // エラーキャッチ
+        window.addEventListener('error', function(e) {
+            log('❌ グローバルエラー: ' + e.message);
+            console.error('Global Error:', e);
+        });
+    </script>
+</body>
+</html>

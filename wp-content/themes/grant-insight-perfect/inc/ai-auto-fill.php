@@ -1,0 +1,1558 @@
+<?php
+/**
+ * Grant Insight Perfect AI自動入力機能 - メインコントローラー
+ * 
+ * @package Grant_Insight_Perfect
+ * @version 1.0.0
+ * @since 2024.12
+ */
+
+// セキュリティチェック
+if (!defined('ABSPATH')) {
+    exit('Direct access denied.');
+}
+
+if (!class_exists('GI_AI_Auto_Fill')) {
+class GI_AI_Auto_Fill {
+    
+    private $api_handler;
+    private $max_daily_requests = 100;
+    private $version = '1.0.0';
+    private $db_version = '1.0';
+    
+    /**
+     * コンストラクタ
+     */
+    public function __construct() {
+        $this->api_handler = new GI_AI_API_Handler();
+        
+        // フックの登録（ログイン済みユーザー用）
+        add_action('wp_ajax_gi_ai_auto_fill', array($this, 'process_auto_fill'));
+        add_action('wp_ajax_gi_ai_batch_process', array($this, 'process_batch_auto_fill'));
+        add_action('wp_ajax_gi_ai_get_progress', array($this, 'get_progress_status'));
+        add_action('wp_ajax_gi_ai_rollback', array($this, 'process_rollback'));
+        add_action('wp_ajax_gi_ai_test_connection', array($this, 'test_connection_ajax'));
+        
+        // 非ログインユーザー用フック（管理画面では不要だが、念のため）
+        add_action('wp_ajax_nopriv_gi_ai_auto_fill', array($this, 'handle_non_logged_in_request'));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_scripts'));
+        add_action('admin_init', array($this, 'init_database'));
+        add_action('wp_loaded', array($this, 'check_daily_limit_reset'));
+        
+        // 設定関連フック
+        add_action('admin_menu', array($this, 'add_admin_menu'));
+        add_action('admin_init', array($this, 'register_settings'));
+        
+        // ダッシュボードウィジェット
+        add_action('wp_dashboard_setup', array($this, 'add_dashboard_widget'));
+        
+        // クリーンアップ処理
+        add_action('wp_scheduled_delete', array($this, 'cleanup_old_logs'));
+        
+        // スケジューリング機能
+        add_action('gi_ai_scheduled_processing', array($this, 'run_scheduled_processing'));
+        add_action('gi_ai_auto_publish', array($this, 'run_auto_publish'));
+        
+        // スケジュール設定
+        if (!wp_next_scheduled('gi_ai_scheduled_processing')) {
+            wp_schedule_event(time(), 'hourly', 'gi_ai_scheduled_processing');
+        }
+        
+        if (!wp_next_scheduled('gi_ai_auto_publish')) {
+            wp_schedule_event(time(), 'daily', 'gi_ai_auto_publish');
+        }
+    }
+    
+    /**
+     * データベースの初期化
+     */
+    public function init_database() {
+        $installed_version = get_option('gi_ai_db_version');
+        
+        if ($installed_version !== $this->db_version) {
+            $this->create_database_tables();
+            update_option('gi_ai_db_version', $this->db_version);
+        }
+    }
+    
+    /**
+     * データベーステーブルの作成
+     */
+    private function create_database_tables() {
+        global $wpdb;
+        
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        // 使用ログテーブル
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        $usage_sql = "CREATE TABLE $usage_table (
+            id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            timestamp datetime DEFAULT CURRENT_TIMESTAMP,
+            user_id bigint(20) UNSIGNED NOT NULL,
+            post_id bigint(20) UNSIGNED NOT NULL,
+            fields_processed text NOT NULL,
+            tokens_used int(11) DEFAULT 0,
+            processing_time float DEFAULT 0,
+            success tinyint(1) DEFAULT 0,
+            error_message text,
+            ip_address varchar(45),
+            user_agent text,
+            PRIMARY KEY (id),
+            KEY user_id (user_id),
+            KEY post_id (post_id),
+            KEY timestamp (timestamp)
+        ) $charset_collate;";
+        
+        // バックアップテーブル
+        $backup_table = $wpdb->prefix . 'gi_ai_backup';
+        $backup_sql = "CREATE TABLE $backup_table (
+            id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            post_id bigint(20) UNSIGNED NOT NULL,
+            field_name varchar(255) NOT NULL,
+            original_value longtext,
+            new_value longtext,
+            backup_timestamp datetime DEFAULT CURRENT_TIMESTAMP,
+            user_id bigint(20) UNSIGNED NOT NULL,
+            is_restored tinyint(1) DEFAULT 0,
+            PRIMARY KEY (id),
+            KEY post_id (post_id),
+            KEY user_id (user_id),
+            KEY backup_timestamp (backup_timestamp)
+        ) $charset_collate;";
+        
+        // 設定テーブル
+        $settings_table = $wpdb->prefix . 'gi_ai_settings';
+        $settings_sql = "CREATE TABLE $settings_table (
+            id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            option_name varchar(191) NOT NULL,
+            option_value longtext,
+            autoload varchar(20) NOT NULL DEFAULT 'yes',
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY option_name (option_name)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($usage_sql);
+        dbDelta($backup_sql);
+        dbDelta($settings_sql);
+        
+        // デフォルト設定の挿入
+        $this->insert_default_settings();
+    }
+    
+    /**
+     * デフォルト設定の挿入
+     */
+    private function insert_default_settings() {
+        $default_settings = array(
+            'gi_ai_daily_limit' => 100,
+            'gi_ai_default_fields' => json_encode(array('ai_summary', 'grant_target', 'eligible_expenses')),
+            'gi_ai_auto_save' => 0,
+            'gi_ai_notification_email' => get_option('admin_email'),
+            'gi_ai_retry_count' => 3,
+            'gi_ai_timeout' => 30,
+            'gi_ai_temperature' => 0.2,
+            'gi_ai_max_tokens' => 1000
+        );
+        
+        foreach ($default_settings as $key => $value) {
+            if (get_option($key) === false) {
+                add_option($key, $value);
+            }
+        }
+    }
+    
+    /**
+     * スクリプトとスタイルの読み込み
+     */
+    public function enqueue_scripts($hook) {
+        if ($hook !== 'post.php' && $hook !== 'post-new.php' && $hook !== 'settings_page_gi-ai-settings') {
+            return;
+        }
+        
+        global $post;
+        if (isset($post) && $post->post_type !== 'grant') {
+            return;
+        }
+        
+        wp_enqueue_script(
+            'gi-ai-auto-fill',
+            get_template_directory_uri() . '/assets/js/ai-auto-fill.js',
+            array('jquery', 'wp-util'),
+            $this->version,
+            true
+        );
+        
+        wp_enqueue_style(
+            'gi-ai-admin-styles',
+            get_template_directory_uri() . '/assets/css/ai-admin-styles.css',
+            array(),
+            $this->version
+        );
+        
+        // JavaScript用の変数を渡す
+        wp_localize_script('gi-ai-auto-fill', 'gi_ai_ajax', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('gi_ai_auto_fill_nonce'),
+            'strings' => array(
+                'processing' => 'AI処理中...',
+                'completed' => '処理完了',
+                'error' => 'エラーが発生しました',
+                'confirm_process' => 'AI自動入力を実行しますか？',
+                'confirm_rollback' => 'ロールバックを実行しますか？すべての変更が元に戻ります。',
+                'no_fields_selected' => '処理対象のフィールドを選択してください'
+            ),
+            'daily_usage' => $this->get_daily_usage()
+        ));
+    }
+    
+    /**
+     * メインのAI自動入力処理
+     */
+    public function process_auto_fill() {
+        try {
+            // デバッグ情報の出力
+            error_log('AI Auto Fill: process_auto_fill started');
+            error_log('POST data: ' . print_r($_POST, true));
+            
+            // POSTデータの存在確認
+            if (empty($_POST)) {
+                error_log('AI Auto Fill: No POST data received');
+                wp_send_json_error('POSTデータが受信されていません');
+            }
+            
+            // nonce検証
+            if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
+                error_log('AI Auto Fill: Nonce verification failed');
+                wp_send_json_error('セキュリティチェックに失敗しました');
+            }
+            
+            // 権限チェック
+            if (!current_user_can('edit_posts')) {
+                error_log('AI Auto Fill: Permission denied for user ' . get_current_user_id());
+                wp_send_json_error('権限がありません');
+            }
+            
+            // パラメータ取得
+            $post_id = isset($_POST['post_id']) ? intval($_POST['post_id']) : 0;
+            $target_fields = isset($_POST['target_fields']) ? $_POST['target_fields'] : array();
+            
+            error_log('AI Auto Fill: Processing post_id=' . $post_id . ', fields=' . print_r($target_fields, true));
+            
+            // 投稿IDチェック
+            if (!$post_id) {
+                wp_send_json_error('投稿IDが無効です');
+            }
+            
+            // 投稿の存在確認
+            $post = get_post($post_id);
+            if (!$post) {
+                error_log('AI Auto Fill: Post not found: ' . $post_id);
+                wp_send_json_error('指定された投稿が見つかりません (ID: ' . $post_id . ')');
+            }
+            
+            // 投稿タイプ確認
+            if ($post->post_type !== 'grant') {
+                error_log('AI Auto Fill: Invalid post type: ' . $post->post_type);
+                wp_send_json_error('対象外の投稿タイプです: ' . $post->post_type);
+            }
+            
+            // 下書き状態の確認
+            if ($post->post_status !== 'draft') {
+                error_log('AI Auto Fill: Invalid post status: ' . $post->post_status);
+                wp_send_json_error('下書き状態の投稿のみ処理可能です (現在: ' . $post->post_status . ')');
+            }
+            
+            // フィールド選択チェック
+            if (empty($target_fields) || !is_array($target_fields)) {
+                error_log('AI Auto Fill: No fields selected');
+                wp_send_json_error('処理対象のフィールドを選択してください');
+            }
+            
+            // APIハンドラーの存在確認
+            if (!$this->api_handler) {
+                error_log('AI Auto Fill: API handler not initialized');
+                wp_send_json_error('AI APIハンドラーが初期化されていません');
+            }
+            
+            // APIキーの確認
+            $api_key = get_option('gi_openai_api_key');
+            $encrypted_api_key = get_option('gi_openai_api_key_encrypted');
+            if (empty($api_key) && empty($encrypted_api_key)) {
+                error_log('AI Auto Fill: API key not configured');
+                wp_send_json_error('OpenAI APIキーが設定されていません。設定画面で APIキーを入力してください。');
+            }
+            
+            // AI処理実行
+            error_log('AI Auto Fill: Starting AI processing');
+            $start_time = microtime(true);
+            $result = $this->execute_ai_fill($post_id, $target_fields);
+            $processing_time = microtime(true) - $start_time;
+            
+            error_log('AI Auto Fill: Processing completed. Result type: ' . gettype($result));
+            if (is_array($result)) {
+                error_log('AI Auto Fill: Result details: ' . print_r($result, true));
+            } else {
+                error_log('AI Auto Fill: Result value: ' . var_export($result, true));
+            }
+            
+            if ($result['success']) {
+                // 使用ログの記録
+                $this->log_usage($post_id, $target_fields, $result, $processing_time);
+                
+                wp_send_json_success(array(
+                    'message' => '処理が完了しました',
+                    'updated_fields' => $result['updated_fields'],
+                    'processing_time' => round($processing_time, 2),
+                    'tokens_used' => $result['total_tokens']
+                ));
+            } else {
+                // エラーログの記録
+                error_log('AI Auto Fill: Processing failed: ' . $result['message']);
+                $this->log_usage($post_id, $target_fields, $result, $processing_time);
+                wp_send_json_error($result['message'] . ' (詳細: ' . print_r($result['errors'], true) . ')');
+            }
+            
+        } catch (Exception $e) {
+            error_log('GI AI Auto Fill Exception: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+            error_log('Stack trace: ' . $e->getTraceAsString());
+            wp_send_json_error('予期しないエラーが発生しました: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 非ログインユーザーのリクエスト処理
+     */
+    public function handle_non_logged_in_request() {
+        wp_send_json_error('ログインが必要です');
+    }
+    
+    /**
+     * AJAX 接続テスト
+     */
+    public function test_connection_ajax() {
+        try {
+            if (!wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
+                wp_send_json_error('セキュリティチェックに失敗しました');
+            }
+            
+            if (!current_user_can('edit_posts')) {
+                wp_send_json_error('権限がありません');
+            }
+            
+            // 基本チェック
+            $checks = array();
+            
+            // APIハンドラーチェック
+            if ($this->api_handler) {
+                $checks[] = 'APIハンドラー: OK';
+            } else {
+                $checks[] = 'APIハンドラー: エラー';
+                wp_send_json_error('APIハンドラーが初期化されていません');
+            }
+            
+            // APIキーチェック
+            $api_key = get_option('gi_openai_api_key');
+            $encrypted_api_key = get_option('gi_openai_api_key_encrypted');
+            
+            if (!empty($api_key) || !empty($encrypted_api_key)) {
+                $checks[] = 'APIキー: 設定済み';
+            } else {
+                $checks[] = 'APIキー: 未設定';
+                wp_send_json_error('APIキーが設定されていません');
+            }
+            
+            // 実際のAPI接続テスト
+            $test_result = $this->api_handler->test_connection();
+            if ($test_result['success']) {
+                $checks[] = 'API接続: 成功';
+                wp_send_json_success(implode(', ', $checks));
+            } else {
+                $checks[] = 'API接続: 失敗 - ' . $test_result['message'];
+                wp_send_json_error(implode(', ', $checks));
+            }
+            
+        } catch (Exception $e) {
+            error_log('Test connection error: ' . $e->getMessage());
+            wp_send_json_error('テスト中にエラーが発生しました: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * AI処理の実行
+     */
+    private function execute_ai_fill($post_id, $target_fields) {
+        try {
+            error_log('AI Auto Fill: execute_ai_fill started for post_id=' . $post_id . ' with fields: ' . implode(', ', $target_fields));
+            
+            $post = get_post($post_id);
+            if (!$post) {
+                error_log('AI Auto Fill: Post not found: ' . $post_id);
+                return array(
+                    'success' => false,
+                    'updated_fields' => array(),
+                    'errors' => array('general' => '投稿が見つかりません'),
+                    'total_tokens' => 0,
+                    'message' => '投稿が見つかりません'
+                );
+            }
+            
+            $updated_fields = array();
+            $total_tokens = 0;
+            $errors = array();
+            
+            // 投稿データの収集
+            error_log('AI Auto Fill: Collecting post data');
+            $post_data = $this->collect_post_data($post_id);
+            if (!is_array($post_data)) {
+                error_log('AI Auto Fill: Failed to collect post data');
+                $errors['general'] = '投稿データの収集に失敗しました';
+                return array(
+                    'success' => false,
+                    'updated_fields' => array(),
+                    'errors' => $errors,
+                    'total_tokens' => 0,
+                    'message' => '投稿データの収集に失敗しました'
+                );
+            }
+            
+            error_log('AI Auto Fill: Post data collected successfully: ' . json_encode(array_keys($post_data)));
+            
+            // バックアップの作成
+            error_log('AI Auto Fill: Creating backup');
+            $this->create_backup($post_id, $target_fields);
+        
+        // フィールド別処理
+        foreach ($target_fields as $field_name) {
+            try {
+                error_log('AI Auto Fill: Processing field: ' . $field_name);
+                
+                // タイトル・本文フィールドの特別処理
+                if ($field_name === 'post_title') {
+                    $current_value = $post->post_title;
+                } elseif ($field_name === 'post_content') {
+                    $current_value = $post->post_content;
+                } else {
+                    // ACFフィールドの処理
+                    if (function_exists('get_field')) {
+                        $current_value = get_field($field_name, $post_id);
+                        error_log('AI Auto Fill: ACF get_field for ' . $field_name . ': ' . (!empty($current_value) ? 'has content' : 'empty'));
+                    } else {
+                        $current_value = get_post_meta($post_id, $field_name, true);
+                        error_log('AI Auto Fill: get_post_meta for ' . $field_name . ': ' . (!empty($current_value) ? 'has content' : 'empty'));
+                    }
+                }
+                
+                // 【重要変更】既に値が入力されている場合もスキップしない - 再生成を可能にする
+                // 以前の動作: if (!empty($current_value) && trim(strip_tags($current_value)) !== '') { continue; }
+                // 新しい動作: 既存フィールドも再生成対象とし、既存コンテンツをコンテキストとして活用
+                
+                // APIハンドラーの存在確認
+                if (!$this->api_handler) {
+                    error_log('AI Auto Fill: API handler is not initialized');
+                    $errors[$field_name] = 'APIハンドラーが初期化されていません';
+                    continue;
+                }
+                
+                // AI生成実行
+                error_log('AI Auto Fill: Calling API handler for field: ' . $field_name);
+                $api_result = $this->api_handler->generate_field_content($post_data, $field_name);
+                error_log('AI Auto Fill: API result for ' . $field_name . ': ' . ($api_result['success'] ? 'success' : 'failed - ' . $api_result['error']));
+                
+                if ($api_result['success']) {
+                    error_log('AI Auto Fill: Generated content for ' . $field_name . ': ' . mb_substr($api_result['content'], 0, 100) . '...');
+                    
+                    // 生成されたコンテンツの検証
+                    $validation_result = $this->validate_generated_content($field_name, $api_result['content']);
+                    
+                    if ($validation_result['valid']) {
+                        error_log('AI Auto Fill: Content validation passed for ' . $field_name);
+                        
+                        // フィールドの更新
+                        $update_success = false;
+                        if ($field_name === 'post_title') {
+                            // タイトル更新
+                            $update_result = wp_update_post(array(
+                                'ID' => $post_id,
+                                'post_title' => $api_result['content']
+                            ));
+                            $update_success = !is_wp_error($update_result) && $update_result > 0;
+                        } elseif ($field_name === 'post_content') {
+                            // 本文更新
+                            $update_result = wp_update_post(array(
+                                'ID' => $post_id,
+                                'post_content' => $api_result['content']
+                            ));
+                            $update_success = !is_wp_error($update_result) && $update_result > 0;
+                        } else {
+                            // ACFフィールド更新
+                            if (function_exists('update_field')) {
+                                $update_success = update_field($field_name, $api_result['content'], $post_id);
+                                error_log('AI Auto Fill: ACF update_field result for ' . $field_name . ': ' . ($update_success ? 'success' : 'failed'));
+                            } else {
+                                $update_success = update_post_meta($post_id, $field_name, $api_result['content']);
+                                error_log('AI Auto Fill: update_post_meta result for ' . $field_name . ': ' . ($update_success ? 'success' : 'failed'));
+                            }
+                        }
+                        
+                        if ($update_success) {
+                            $updated_fields[$field_name] = $api_result['content'];
+                            $total_tokens += $api_result['tokens_used'];
+                            error_log('AI Auto Fill: Successfully updated field ' . $field_name);
+                        } else {
+                            $errors[$field_name] = 'フィールドの更新に失敗しました';
+                            error_log('AI Auto Fill: Failed to update field ' . $field_name);
+                        }
+                    } else {
+                        $errors[$field_name] = $validation_result['error'];
+                        error_log('AI Auto Fill: Content validation failed for ' . $field_name . ': ' . $validation_result['error']);
+                    }
+                } else {
+                    $errors[$field_name] = $api_result['error'];
+                    error_log('AI Auto Fill: API generation failed for ' . $field_name . ': ' . $api_result['error']);
+                }
+                
+                // API制限対応の待機
+                if (count($target_fields) > 1) {
+                    sleep(1);
+                }
+                
+            } catch (Exception $e) {
+                $errors[$field_name] = 'フィールド処理エラー: ' . $e->getMessage();
+                error_log('AI Auto Fill: Exception in field processing for ' . $field_name . ': ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+            }
+        }
+        
+            // 結果の判定
+            $success = !empty($updated_fields);
+            
+            error_log('AI Auto Fill: execute_ai_fill completed. Success: ' . ($success ? 'true' : 'false') . ', Updated fields: ' . count($updated_fields));
+            
+            return array(
+                'success' => $success,
+                'updated_fields' => $updated_fields,
+                'errors' => $errors,
+                'total_tokens' => $total_tokens,
+                'message' => $success ? '処理完了' : '処理に失敗しました: ' . implode(', ', $errors)
+            );
+            
+        } catch (Exception $e) {
+            error_log('AI Auto Fill: Exception in execute_ai_fill: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+            return array(
+                'success' => false,
+                'updated_fields' => array(),
+                'errors' => array('exception' => 'AI処理でエラーが発生しました: ' . $e->getMessage()),
+                'total_tokens' => 0,
+                'message' => 'AI処理でエラーが発生しました: ' . $e->getMessage()
+            );
+        }
+    }
+    
+    /**
+     * 投稿データの収集（拡張版）
+     * 既存フィールドの内容をコンテキストとして収集し、AIにより良い生成の根拠を提供
+     */
+    private function collect_post_data($post_id) {
+        try {
+            error_log('AI Auto Fill: collect_post_data started for post_id=' . $post_id);
+            
+            $post = get_post($post_id);
+            if (!$post) {
+                error_log('AI Auto Fill: Post not found in collect_post_data');
+                return false;
+            }
+        
+        $data = array(
+            'title' => $post->post_title,
+            'content' => $post->post_content,
+            'excerpt' => $post->post_excerpt,
+            'post_id' => $post_id
+        );
+        
+        // 基本ACFフィールドの取得
+        $acf_fields = array(
+            'organization' => 'grant_organization',
+            'official_url' => 'grant_official_url',
+            'max_amount' => 'grant_max_amount',
+            'min_amount' => 'grant_min_amount',
+            'grant_period_start' => 'grant_period_start',
+            'grant_period_end' => 'grant_period_end',
+            'application_deadline' => 'application_deadline',
+            'target_business_type' => 'target_business_type',
+            'target_region' => 'target_region'
+        );
+        
+        // ACF関数の存在確認
+        if (function_exists('get_field')) {
+            foreach ($acf_fields as $key => $field_name) {
+                $value = get_field($field_name, $post_id);
+                if ($value) {
+                    $data[$key] = $value;
+                }
+            }
+        } else {
+            error_log('AI Auto Fill: ACF get_field function not available');
+            // ACFが無効の場合はカスタムフィールドから取得を試行
+            foreach ($acf_fields as $key => $field_name) {
+                $value = get_post_meta($post_id, $field_name, true);
+                if ($value) {
+                    $data[$key] = $value;
+                }
+            }
+        }
+        
+        // 【新機能】AI生成対象フィールドの既存内容をコンテキストとして追加
+        $ai_target_fields = array(
+            'ai_summary' => 'AI概要',
+            'grant_target' => '対象者・対象事業', 
+            'eligible_expenses' => '対象経費',
+            'grant_difficulty' => '申請難易度',
+            'required_documents' => '必要書類',
+            'application_method' => '申請方法',
+            'contact_info' => '問い合わせ先',
+            'amount_note' => '金額備考',
+            'deadline_note' => '締切備考'
+        );
+        
+        $existing_content = array();
+        foreach ($ai_target_fields as $field_name => $field_label) {
+            // ACF関数が利用可能かチェック
+            if (function_exists('get_field')) {
+                $value = get_field($field_name, $post_id);
+            } else {
+                $value = get_post_meta($field_name, true);
+            }
+            
+            if (!empty($value) && trim(strip_tags($value)) !== '') {
+                // 品質チェック：低品質な既存コンテンツを除外
+                if ($this->is_high_quality_content($value)) {
+                    $existing_content[$field_name] = array(
+                        'label' => $field_label,
+                        'value' => $value
+                    );
+                }
+            }
+        }
+        
+            // 既存コンテンツをデータに追加
+            if (!empty($existing_content)) {
+                $data['existing_ai_content'] = $existing_content;
+            }
+            
+            error_log('AI Auto Fill: collect_post_data completed successfully');
+            return $data;
+            
+        } catch (Exception $e) {
+            error_log('AI Auto Fill: Exception in collect_post_data: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * 既存コンテンツの品質チェック
+     * 低品質なコンテンツを既存コンテキストから除外する
+     */
+    private function is_high_quality_content($content) {
+        $clean_content = trim(strip_tags($content));
+        
+        // 文字数チェック（短すぎる場合は低品質）
+        if (mb_strlen($clean_content, 'UTF-8') < 10) {
+            return false;
+        }
+        
+        // 低品質パターンのチェック
+        $low_quality_patterns = array(
+            '/、{2,}/',                 // 、、、の連続
+            '/。{2,}/',                 // 。。。の連続
+            '/…{2,}/',                  // ……の連続
+            '/\.{3,}/',                 // ...の連続
+            '/とか/',                   // 曖昧表現「とか」
+            '/など$/',                  // 文末の「など」
+            '/等$/',                    // 文末の「等」
+            '/様々な/',                 // 曖昧表現「様々な」
+            '/各種/',                   // 曖昧表現「各種」
+            '/適切な/',                 // 曖昧表現「適切な」
+            '/十分な/',                 // 曖昧表現「十分な」
+            '/未定/',                   // 「未定」
+            '/調整中/',                 // 「調整中」
+            '/検討中/',                 // 「検討中」
+        );
+        
+        foreach ($low_quality_patterns as $pattern) {
+            if (preg_match($pattern, $clean_content)) {
+                return false;
+            }
+        }
+        
+        // 具体的な数値や固有名詞が含まれているかチェック（高品質の指標）
+        $quality_indicators = array(
+            '/\d+/',                    // 数値
+            '/[０-９]+/',              // 全角数値
+            '/株式会社/',               // 会社名
+            '/有限会社/',               // 会社名
+            '/〒\d{3}-\d{4}/',         // 郵便番号
+            '/\d{2,4}-\d{2,4}-\d{4}/', // 電話番号
+            '/年|月|日/',               // 日付
+            '/円|万円|億円/',          // 金額
+            '/%|パーセント/',          // パーセンテージ
+        );
+        
+        $quality_score = 0;
+        foreach ($quality_indicators as $indicator) {
+            if (preg_match($indicator, $clean_content)) {
+                $quality_score++;
+            }
+        }
+        
+        // 2つ以上の品質指標があれば高品質とみなす
+        return $quality_score >= 2;
+    }
+    
+    /**
+     * 生成コンテンツの検証
+     */
+    private function validate_generated_content($field_name, $content) {
+        // 基本的な文字数チェック
+        $field_limits = array(
+            'ai_summary' => 200,
+            'grant_target' => 1000,
+            'eligible_expenses' => 800,
+            'required_documents' => 600,
+            'contact_info' => 400,
+            'amount_note' => 500,
+            'deadline_note' => 300
+        );
+        
+        // 文字数チェック
+        if (isset($field_limits[$field_name])) {
+            $char_count = mb_strlen(strip_tags($content), 'UTF-8');
+            if ($char_count > $field_limits[$field_name]) {
+                return array(
+                    'valid' => false,
+                    'error' => "文字数上限({$field_limits[$field_name]}文字)を超えています: {$char_count}文字"
+                );
+            }
+        }
+        
+        // HTMLタグチェック（wysiwyg フィールド用）
+        $html_fields = array('grant_target', 'eligible_expenses', 'required_documents');
+        if (in_array($field_name, $html_fields)) {
+            if (!$this->validate_html_content($content)) {
+                return array(
+                    'valid' => false,
+                    'error' => '不正なHTMLタグが含まれています'
+                );
+            }
+        }
+        
+        // 選択肢フィールドの値チェック
+        if ($field_name === 'grant_difficulty') {
+            $allowed_values = array('easy', 'normal', 'hard', 'expert');
+            if (!in_array($content, $allowed_values)) {
+                return array(
+                    'valid' => false,
+                    'error' => '無効な難易度値です'
+                );
+            }
+        }
+        
+        if ($field_name === 'application_method') {
+            $allowed_values = array('online', 'mail', 'visit', 'mixed');
+            if (!in_array($content, $allowed_values)) {
+                return array(
+                    'valid' => false,
+                    'error' => '無効な申請方法です'
+                );
+            }
+        }
+        
+        // NGワードチェック
+        if ($this->contains_inappropriate_content($content)) {
+            return array(
+                'valid' => false,
+                'error' => '不適切なコンテンツが検出されました'
+            );
+        }
+        
+        // 生成コンテンツ品質チェック
+        if (!$this->is_high_quality_generated_content($content)) {
+            return array(
+                'valid' => false,
+                'error' => '生成されたコンテンツの品質が基準を満たしていません'
+            );
+        }
+        
+        return array('valid' => true);
+    }
+    
+    /**
+     * HTMLコンテンツの検証
+     */
+    private function validate_html_content($content) {
+        // 許可されたHTMLタグ
+        $allowed_tags = array(
+            'p', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'a', 'span'
+        );
+        
+        // DOMDocumentを使用した検証
+        libxml_use_internal_errors(true);
+        $dom = new DOMDocument();
+        $dom->loadHTML('<?xml encoding="UTF-8">' . $content, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+        
+        $errors = libxml_get_errors();
+        if (!empty($errors)) {
+            return false;
+        }
+        
+        // タグの検証
+        $xpath = new DOMXPath($dom);
+        $all_elements = $xpath->query('//*');
+        
+        foreach ($all_elements as $element) {
+            if (!in_array(strtolower($element->tagName), $allowed_tags)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 生成コンテンツの品質チェック
+     */
+    private function is_high_quality_generated_content($content) {
+        $clean_content = trim(strip_tags($content));
+        
+        // 低品質パターンの検出（厳格版）
+        $poor_quality_patterns = array(
+            '/、{2,}/',                 // 、、、の連続
+            '/。{2,}/',                 // 。。。の連続
+            '/…{2,}/',                  // ……の連続
+            '/\.{3,}/',                 // ...の連続
+            '/とか/',                   // 「とか」
+            '/など$/',                  // 文末の「など」
+            '/等$/',                    // 文末の「等」
+            '/様々な/',                 // 「様々な」
+            '/各種/',                   // 「各種」
+            '/適切な/',                 // 「適切な」
+            '/十分な/',                 // 「十分な」
+            '/必要に応じて/',           // 「必要に応じて」
+            '/場合によっては/',         // 「場合によっては」
+            '/詳細は.*確認/',          // 「詳細は〜確認」
+            '/については/',             // 「については」（曖昧な前置き）
+        );
+        
+        foreach ($poor_quality_patterns as $pattern) {
+            if (preg_match($pattern, $clean_content)) {
+                return false;
+            }
+        }
+        
+        // 具体性チェック：数値・固有名詞・具体的表現の存在
+        $concrete_indicators = array(
+            '/\d+/',                    // 数値
+            '/[０-９]+/',              // 全角数値
+            '/円|万円|億円/',          // 金額表現
+            '/%|パーセント/',          // パーセンテージ
+            '/年|月|日/',               // 日付表現
+            '/名以上|名以下/',          // 人数表現
+            '/上限.*円/',               // 上限金額
+            '/対象.*業/',               // 対象業種
+            '/申請.*必要/',             // 申請要件
+            '/株式会社|有限会社|財団|社団/', // 組織名
+        );
+        
+        $concrete_score = 0;
+        foreach ($concrete_indicators as $indicator) {
+            if (preg_match($indicator, $clean_content)) {
+                $concrete_score++;
+            }
+        }
+        
+        // 最低1つの具体的表現が必要
+        return $concrete_score >= 1;
+    }
+    
+    /**
+     * 不適切コンテンツの検出
+     */
+    private function contains_inappropriate_content($content) {
+        $ng_words = array(
+            // 基本的なNGワード（実際の運用では設定ファイル等で管理）
+            '詐欺', '違法', '危険'
+        );
+        
+        foreach ($ng_words as $ng_word) {
+            if (strpos($content, $ng_word) !== false) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * バックアップの作成
+     */
+    private function create_backup($post_id, $target_fields) {
+        global $wpdb;
+        
+        $backup_table = $wpdb->prefix . 'gi_ai_backup';
+        $user_id = get_current_user_id();
+        
+        foreach ($target_fields as $field_name) {
+            $current_value = get_field($field_name, $post_id);
+            
+            $wpdb->insert(
+                $backup_table,
+                array(
+                    'post_id' => $post_id,
+                    'field_name' => $field_name,
+                    'original_value' => $current_value,
+                    'user_id' => $user_id,
+                    'backup_timestamp' => current_time('mysql')
+                ),
+                array('%d', '%s', '%s', '%d', '%s')
+            );
+        }
+    }
+    
+    /**
+     * ロールバック処理
+     */
+    public function process_rollback() {
+        if (!wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
+            wp_die('セキュリティチェックに失敗しました');
+        }
+        
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error('権限がありません');
+        }
+        
+        $post_id = intval($_POST['post_id']);
+        
+        global $wpdb;
+        $backup_table = $wpdb->prefix . 'gi_ai_backup';
+        
+        // 最新のバックアップを取得
+        $backups = $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $backup_table 
+             WHERE post_id = %d AND is_restored = 0 
+             ORDER BY backup_timestamp DESC",
+            $post_id
+        ));
+        
+        if (empty($backups)) {
+            wp_send_json_error('復元可能なバックアップが見つかりません');
+        }
+        
+        $restored_fields = array();
+        foreach ($backups as $backup) {
+            // フィールドを元の値に復元
+            update_field($backup->field_name, $backup->original_value, $post_id);
+            $restored_fields[] = $backup->field_name;
+            
+            // バックアップを復元済みにマーク
+            $wpdb->update(
+                $backup_table,
+                array('is_restored' => 1),
+                array('id' => $backup->id),
+                array('%d'),
+                array('%d')
+            );
+        }
+        
+        wp_send_json_success(array(
+            'message' => 'ロールバックが完了しました',
+            'restored_fields' => $restored_fields
+        ));
+    }
+    
+    /**
+     * 日次制限のチェック
+     */
+    private function check_daily_limit() {
+        // 日次制限を無効化 - 常に制限内として処理
+        return true;
+        
+        // 元の制限チェックロジック（無効化）
+        // $daily_usage = $this->get_daily_usage();
+        // $daily_limit = get_option('gi_ai_daily_limit', 100);
+        // return $daily_usage < $daily_limit;
+    }
+    
+    /**
+     * 日次使用量の取得
+     */
+    private function get_daily_usage() {
+        global $wpdb;
+        
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        $today = current_time('Y-m-d');
+        
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM $usage_table 
+             WHERE DATE(timestamp) = %s AND success = 1",
+            $today
+        ));
+        
+        return intval($count);
+    }
+    
+    /**
+     * 日次制限のリセット確認
+     */
+    public function check_daily_limit_reset() {
+        $last_reset = get_option('gi_ai_last_reset_date');
+        $today = current_time('Y-m-d');
+        
+        if ($last_reset !== $today) {
+            delete_transient('gi_ai_daily_usage_cache');
+            update_option('gi_ai_last_reset_date', $today);
+        }
+    }
+    
+    /**
+     * 使用ログの記録
+     */
+    private function log_usage($post_id, $fields, $result, $processing_time) {
+        global $wpdb;
+        
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        
+        $log_data = array(
+            'timestamp' => current_time('mysql'),
+            'user_id' => get_current_user_id(),
+            'post_id' => $post_id,
+            'fields_processed' => json_encode($fields),
+            'tokens_used' => isset($result['total_tokens']) ? $result['total_tokens'] : 0,
+            'processing_time' => $processing_time,
+            'success' => $result['success'] ? 1 : 0,
+            'error_message' => $result['success'] ? null : $result['message'],
+            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
+            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+        );
+        
+        $wpdb->insert(
+            $usage_table,
+            $log_data,
+            array('%s', '%d', '%d', '%s', '%d', '%f', '%d', '%s', '%s', '%s')
+        );
+    }
+    
+    /**
+     * バッチ処理
+     */
+    public function process_batch_auto_fill() {
+        if (!wp_verify_nonce($_POST['nonce'], 'gi_ai_auto_fill_nonce')) {
+            wp_die('セキュリティチェックに失敗しました');
+        }
+        
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error('権限がありません');
+        }
+        
+        $post_ids = isset($_POST['post_ids']) ? $_POST['post_ids'] : array();
+        $target_fields = isset($_POST['target_fields']) ? $_POST['target_fields'] : array();
+        
+        if (empty($post_ids) || !is_array($post_ids)) {
+            wp_send_json_error('処理対象の投稿を選択してください');
+        }
+        
+        $results = $this->process_batch($post_ids, $target_fields);
+        
+        wp_send_json_success(array(
+            'message' => 'バッチ処理が完了しました',
+            'results' => $results
+        ));
+    }
+    
+    /**
+     * バッチ処理の実行
+     */
+    private function process_batch($post_ids, $target_fields) {
+        $results = array();
+        $total = count($post_ids);
+        
+        foreach ($post_ids as $index => $post_id) {
+            // 進捗更新
+            $this->update_batch_progress($index + 1, $total);
+            
+            // 個別処理
+            $result = $this->execute_ai_fill($post_id, $target_fields);
+            $results[$post_id] = $result;
+            
+            // API制限対応の待機
+            if ($index < $total - 1) {
+                sleep(2);
+            }
+            
+            // 中断チェック
+            if ($this->should_stop_batch_processing()) {
+                break;
+            }
+        }
+        
+        return $results;
+    }
+    
+    /**
+     * バッチ処理の進捗更新
+     */
+    private function update_batch_progress($current, $total) {
+        set_transient('gi_ai_batch_progress', array(
+            'current' => $current,
+            'total' => $total,
+            'percentage' => round(($current / $total) * 100)
+        ), 300);
+    }
+    
+    /**
+     * バッチ処理停止判定
+     */
+    private function should_stop_batch_processing() {
+        return get_transient('gi_ai_batch_stop') === 'true';
+    }
+    
+    /**
+     * 進捗状況の取得
+     */
+    public function get_progress_status() {
+        $progress = get_transient('gi_ai_batch_progress');
+        
+        if ($progress) {
+            wp_send_json_success($progress);
+        } else {
+            wp_send_json_error('進捗情報が見つかりません');
+        }
+    }
+    
+    /**
+     * 管理画面メニューの追加
+     */
+    public function add_admin_menu() {
+        add_options_page(
+            'AI自動入力設定',
+            'AI自動入力設定',
+            'manage_options',
+            'gi-ai-settings',
+            array($this, 'render_settings_page')
+        );
+    }
+    
+    /**
+     * 設定の登録
+     */
+    public function register_settings() {
+        register_setting('gi_ai_settings', 'gi_openai_api_key');
+        register_setting('gi_ai_settings', 'gi_ai_daily_limit');
+        register_setting('gi_ai_settings', 'gi_ai_default_fields');
+        register_setting('gi_ai_settings', 'gi_ai_auto_save');
+        register_setting('gi_ai_settings', 'gi_ai_notification_email');
+        register_setting('gi_ai_settings', 'gi_ai_retry_count');
+        register_setting('gi_ai_settings', 'gi_ai_timeout');
+        register_setting('gi_ai_settings', 'gi_ai_temperature');
+        register_setting('gi_ai_settings', 'gi_ai_max_tokens');
+    }
+    
+    /**
+     * 設定画面のレンダリング
+     */
+    public function render_settings_page() {
+        if (isset($_POST['test_api_connection'])) {
+            $test_result = $this->test_api_connection();
+        }
+        ?>
+        <div class="wrap">
+            <h1>AI自動入力設定</h1>
+            
+            <?php if (isset($test_result)): ?>
+                <div class="notice notice-<?php echo $test_result['success'] ? 'success' : 'error'; ?>">
+                    <p><?php echo esc_html($test_result['message']); ?></p>
+                </div>
+            <?php endif; ?>
+            
+            <form method="post" action="options.php">
+                <?php
+                settings_fields('gi_ai_settings');
+                do_settings_sections('gi_ai_settings');
+                ?>
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">OpenAI APIキー</th>
+                        <td>
+                            <input type="password" name="gi_openai_api_key" 
+                                   value="<?php echo esc_attr(get_option('gi_openai_api_key')); ?>" 
+                                   class="regular-text" placeholder="sk-..." />
+                            <p class="description">ChatGPT API利用のためのAPIキーを入力してください。</p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">日次利用上限</th>
+                        <td>
+                            <input type="number" name="gi_ai_daily_limit" 
+                                   value="<?php echo esc_attr(get_option('gi_ai_daily_limit', 100)); ?>" 
+                                   min="1" max="1000" />
+                            <p class="description">1日あたりの最大API呼び出し回数（コスト管理用）</p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">自動保存モード</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="gi_ai_auto_save" value="1" 
+                                       <?php checked(get_option('gi_ai_auto_save', 0), 1); ?> />
+                                生成後に自動で保存する
+                            </label>
+                            <p class="description">無効の場合は手動確認後に保存</p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">エラー通知メール</th>
+                        <td>
+                            <input type="email" name="gi_ai_notification_email" 
+                                   value="<?php echo esc_attr(get_option('gi_ai_notification_email', get_option('admin_email'))); ?>" 
+                                   class="regular-text" />
+                            <p class="description">エラー発生時の通知先メールアドレス</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <?php submit_button(); ?>
+            </form>
+            
+            <h2>API接続テスト</h2>
+            <form method="post">
+                <p>
+                    <input type="submit" name="test_api_connection" class="button" value="接続テスト実行" />
+                    <span class="description">OpenAI APIとの接続をテストします</span>
+                </p>
+            </form>
+            
+            <h2>統計情報</h2>
+            <?php $this->render_statistics(); ?>
+        </div>
+        <?php
+    }
+    
+    /**
+     * API接続テスト
+     */
+    private function test_api_connection() {
+        $api_key = get_option('gi_openai_api_key');
+        
+        if (empty($api_key)) {
+            return array(
+                'success' => false,
+                'message' => 'APIキーが設定されていません。'
+            );
+        }
+        
+        $test_result = $this->api_handler->test_connection();
+        
+        return $test_result;
+    }
+    
+    /**
+     * 統計情報の表示
+     */
+    private function render_statistics() {
+        global $wpdb;
+        
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        
+        // 今日の使用量
+        $today_usage = $this->get_daily_usage();
+        $daily_limit = get_option('gi_ai_daily_limit', 100);
+        
+        // 今月の統計
+        $this_month = current_time('Y-m');
+        $monthly_stats = $wpdb->get_row($wpdb->prepare(
+            "SELECT COUNT(*) as total_requests, 
+                    SUM(tokens_used) as total_tokens,
+                    AVG(processing_time) as avg_processing_time,
+                    SUM(success) as successful_requests
+             FROM $usage_table 
+             WHERE DATE_FORMAT(timestamp, '%%Y-%%m') = %s",
+            $this_month
+        ));
+        
+        ?>
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <th>項目</th>
+                    <th>値</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>本日の使用量</td>
+                    <td><?php echo $today_usage; ?> / <?php echo $daily_limit; ?> 回</td>
+                </tr>
+                <tr>
+                    <td>今月の総リクエスト数</td>
+                    <td><?php echo $monthly_stats->total_requests ?? 0; ?> 回</td>
+                </tr>
+                <tr>
+                    <td>今月の成功率</td>
+                    <td>
+                        <?php 
+                        if ($monthly_stats->total_requests > 0) {
+                            $success_rate = ($monthly_stats->successful_requests / $monthly_stats->total_requests) * 100;
+                            echo round($success_rate, 1) . '%';
+                        } else {
+                            echo 'N/A';
+                        }
+                        ?>
+                    </td>
+                </tr>
+                <tr>
+                    <td>今月の総トークン使用量</td>
+                    <td><?php echo number_format($monthly_stats->total_tokens ?? 0); ?> トークン</td>
+                </tr>
+                <tr>
+                    <td>平均処理時間</td>
+                    <td><?php echo round($monthly_stats->avg_processing_time ?? 0, 2); ?> 秒</td>
+                </tr>
+            </tbody>
+        </table>
+        <?php
+    }
+    
+    /**
+     * ダッシュボードウィジェットの追加
+     */
+    public function add_dashboard_widget() {
+        wp_add_dashboard_widget(
+            'gi_ai_dashboard_widget',
+            'AI自動入力 - 利用状況',
+            array($this, 'render_dashboard_widget')
+        );
+    }
+    
+    /**
+     * ダッシュボードウィジェットの表示
+     */
+    public function render_dashboard_widget() {
+        $today_usage = $this->get_daily_usage();
+        
+        ?>
+        <div class="gi-ai-dashboard-widget">
+            <p><strong>AI自動入力機能</strong></p>
+            <p>✅ 機能は正常に動作しています</p>
+            <p>📊 本日の使用回数: <?php echo $today_usage; ?> 回</p>
+            <p>🚀 制限なしで自由にご利用いただけます</p>
+        </div>
+        
+        <style>
+        .gi-ai-usage-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f1f1f1;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .gi-ai-usage-progress {
+            height: 100%;
+            background-color: #0073aa;
+            transition: width 0.3s ease;
+        }
+        </style>
+        <?php
+    }
+    
+    /**
+     * 古いログのクリーンアップ
+     */
+    public function cleanup_old_logs() {
+        global $wpdb;
+        
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        $backup_table = $wpdb->prefix . 'gi_ai_backup';
+        
+        // 3ヶ月以前のログを削除
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM $usage_table WHERE timestamp < DATE_SUB(NOW(), INTERVAL 3 MONTH)"
+        ));
+        
+        // 1ヶ月以前の復元済みバックアップを削除
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM $backup_table WHERE backup_timestamp < DATE_SUB(NOW(), INTERVAL 1 MONTH) AND is_restored = 1"
+        ));
+    }
+    
+    /**
+     * スケジュールされた処理の実行
+     */
+    public function run_scheduled_processing() {
+        // スケジューリング設定を取得
+        $auto_processing_enabled = get_option('gi_ai_auto_processing_enabled', 0);
+        
+        if (!$auto_processing_enabled) {
+            return;
+        }
+        
+        // 処理対象の投稿を取得（下書きで、作成から24時間以上経過）
+        $posts = get_posts(array(
+            'post_type' => 'grant',
+            'post_status' => 'draft',
+            'numberposts' => 10,
+            'date_query' => array(
+                array(
+                    'before' => '24 hours ago'
+                )
+            ),
+            'meta_query' => array(
+                array(
+                    'key' => '_gi_ai_processed',
+                    'compare' => 'NOT EXISTS'
+                )
+            )
+        ));
+        
+        if (empty($posts)) {
+            return;
+        }
+        
+        // デフォルトフィールドを取得
+        $default_fields = json_decode(get_option('gi_ai_default_fields', '["ai_summary", "grant_target"]'), true);
+        
+        foreach ($posts as $post) {
+            // 日次制限チェックを無効化
+            // if (!$this->check_daily_limit()) {
+            //     break;
+            // }
+            
+            // AI処理実行
+            $result = $this->execute_ai_fill($post->ID, $default_fields);
+            
+            // 処理済みマークを追加
+            update_post_meta($post->ID, '_gi_ai_processed', current_time('mysql'));
+            
+            // スケジュール処理のログ
+            $this->log_scheduled_processing($post->ID, $result);
+            
+            // API制限対応
+            sleep(2);
+        }
+    }
+    
+    /**
+     * 自動公開処理
+     */
+    public function run_auto_publish() {
+        $auto_publish_enabled = get_option('gi_ai_auto_publish_enabled', 0);
+        
+        if (!$auto_publish_enabled) {
+            return;
+        }
+        
+        // 自動公開の条件を満たす投稿を取得
+        $publish_delay_days = get_option('gi_ai_auto_publish_delay', 7);
+        
+        $posts = get_posts(array(
+            'post_type' => 'grant',
+            'post_status' => 'draft',
+            'numberposts' => 20,
+            'date_query' => array(
+                array(
+                    'before' => $publish_delay_days . ' days ago'
+                )
+            ),
+            'meta_query' => array(
+                array(
+                    'key' => '_gi_ai_processed',
+                    'compare' => 'EXISTS'
+                ),
+                array(
+                    'key' => '_gi_ai_auto_published',
+                    'compare' => 'NOT EXISTS'
+                )
+            )
+        ));
+        
+        foreach ($posts as $post) {
+            // 必須フィールドの確認
+            if ($this->validate_post_for_publish($post->ID)) {
+                // 投稿を公開
+                wp_update_post(array(
+                    'ID' => $post->ID,
+                    'post_status' => 'publish'
+                ));
+                
+                // 自動公開済みマーク
+                update_post_meta($post->ID, '_gi_ai_auto_published', current_time('mysql'));
+                
+                // ログ記録
+                error_log("AI Auto Publish: Post ID {$post->ID} automatically published");
+            }
+        }
+    }
+    
+    /**
+     * 投稿の公開準備状況を検証
+     */
+    private function validate_post_for_publish($post_id) {
+        // タイトルチェック
+        $post = get_post($post_id);
+        if (empty($post->post_title) || trim($post->post_title) === '') {
+            return false;
+        }
+        
+        // 必須フィールドチェック
+        $required_fields = array('ai_summary', 'grant_target');
+        foreach ($required_fields as $field) {
+            $value = get_field($field, $post_id);
+            if (empty($value) || trim(strip_tags($value)) === '') {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * スケジュール処理のログ記録
+     */
+    private function log_scheduled_processing($post_id, $result) {
+        global $wpdb;
+        
+        $usage_table = $wpdb->prefix . 'gi_ai_usage_log';
+        
+        $log_data = array(
+            'timestamp' => current_time('mysql'),
+            'user_id' => 0, // システム処理
+            'post_id' => $post_id,
+            'fields_processed' => json_encode($result['updated_fields'] ?? array()),
+            'tokens_used' => $result['total_tokens'] ?? 0,
+            'processing_time' => $result['processing_time'] ?? 0,
+            'success' => $result['success'] ? 1 : 0,
+            'error_message' => $result['success'] ? 'Scheduled processing' : $result['message'],
+            'ip_address' => 'scheduled',
+            'user_agent' => 'AI Scheduler'
+        );
+        
+        $wpdb->insert(
+            $usage_table,
+            $log_data,
+            array('%s', '%d', '%d', '%s', '%d', '%f', '%d', '%s', '%s', '%s')
+        );
+    }
+}
+
+} // クラス定義終了
+
+// インスタンス化
+if (class_exists('GI_AI_Auto_Fill')) {
+    error_log('Initializing GI_AI_Auto_Fill instance');
+    new GI_AI_Auto_Fill();
+    error_log('GI_AI_Auto_Fill instance created successfully');
+}

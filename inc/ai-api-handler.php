@@ -702,6 +702,11 @@ class GI_AI_API_Handler {
             'presence_penalty' => 0.0
         );
         
+        // 🔍 送信データのログ出力
+        error_log('🚀 AI API Request - Model: ' . $this->model . ', Max Tokens: ' . $this->max_tokens);
+        error_log('🎯 AI API System Prompt (first 200 chars): ' . mb_substr($prompt['system'], 0, 200));
+        error_log('📝 AI API User Prompt (first 300 chars): ' . mb_substr($prompt['user'], 0, 300));
+        
         $headers = array(
             'Authorization' => 'Bearer ' . $this->api_key,
             'Content-Type' => 'application/json',
@@ -716,17 +721,24 @@ class GI_AI_API_Handler {
             'sslverify' => true
         );
         
+        // 🔍 リクエスト詳細ログ
+        error_log('🌐 AI API Request URL: ' . $this->api_endpoint);
+        error_log('🔑 AI API Key Status: ' . (!empty($this->api_key) ? 'Set (' . strlen($this->api_key) . ' chars)' : 'NOT SET'));
+        
         // リトライ機能付きでリクエスト実行
         $last_error = '';
         
         for ($attempt = 1; $attempt <= $this->retry_count; $attempt++) {
+            error_log('🔄 AI API Request Attempt: ' . $attempt . '/' . $this->retry_count);
             $response = wp_remote_request($this->api_endpoint, $args);
             
             if (is_wp_error($response)) {
                 $last_error = $response->get_error_message();
+                error_log('❌ AI API WP_Error on attempt ' . $attempt . ': ' . $last_error);
                 
                 // 最後の試行でなければ待機
                 if ($attempt < $this->retry_count) {
+                    error_log('⏳ AI API Waiting before retry: ' . $attempt . 's');
                     sleep($attempt); // 指数バックオフ
                 }
                 continue;
@@ -735,15 +747,33 @@ class GI_AI_API_Handler {
             $response_code = wp_remote_retrieve_response_code($response);
             $response_body = wp_remote_retrieve_body($response);
             
+            error_log('📡 AI API Response Code: ' . $response_code);
+            error_log('📄 AI API Response Body Length: ' . strlen($response_body) . ' chars');
+            
+            if ($response_code !== 200) {
+                error_log('❌ AI API Non-200 Response: ' . $response_code);
+                error_log('📄 AI API Error Body: ' . substr($response_body, 0, 500));
+            } else {
+                // 成功レスポンスの場合は内容の一部をログ
+                $json_data = json_decode($response_body, true);
+                if (isset($json_data['choices'][0]['message']['content'])) {
+                    $generated_content = $json_data['choices'][0]['message']['content'];
+                    error_log('✅ AI API Generated Content (first 200 chars): ' . mb_substr($generated_content, 0, 200));
+                    error_log('📊 AI API Token Usage: ' . ($json_data['usage']['total_tokens'] ?? 'unknown'));
+                }
+            }
+            
             // レスポンスの検証
             $parsed_response = $this->parse_api_response($response_code, $response_body);
             
             if ($parsed_response['success']) {
                 $response_time = microtime(true) - $start_time;
                 $parsed_response['response_time'] = $response_time;
+                error_log('🎉 AI API Success - Response Time: ' . number_format($response_time, 2) . 's');
                 return $parsed_response;
             } else {
                 $last_error = $parsed_response['error'];
+                error_log('❌ AI API Parse Failed on attempt ' . $attempt . ': ' . $last_error);
                 
                 // レート制限の場合は長めに待機
                 if ($response_code === 429) {
