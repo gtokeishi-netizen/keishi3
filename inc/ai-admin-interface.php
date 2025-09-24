@@ -665,6 +665,11 @@ class GI_AI_Admin_Interface {
             return;
         }
         
+        // 外部スクリプトが既にエンキューされている場合はインラインJavaScriptをスキップ
+        if (wp_script_is('gi-ai-auto-fill', 'enqueued')) {
+            return;
+        }
+        
         ?>
         <script type="text/javascript">
         jQuery(document).ready(function($) {

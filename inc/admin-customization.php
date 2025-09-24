@@ -282,7 +282,21 @@ function gi_ai_settings_page() {
         // OpenAI APIキーの保存
         if (isset($_POST['openai_api_key'])) {
             $api_key = sanitize_text_field($_POST['openai_api_key']);
-            gi_set_openai_api_key($api_key);
+            
+            // 新しい暗号化システムを使用
+            if (class_exists('GI_AI_API_Handler') && !empty($api_key)) {
+                GI_AI_API_Handler::save_encrypted_api_key($api_key);
+                // 旧システムとの互換性のためにも保存
+                gi_set_openai_api_key($api_key);
+            } else {
+                // APIキーが空の場合は削除
+                if (empty($api_key)) {
+                    GI_AI_API_Handler::save_encrypted_api_key('');
+                    gi_set_openai_api_key('');
+                } else {
+                    gi_set_openai_api_key($api_key);
+                }
+            }
         }
         
         echo '<div class="notice notice-success"><p>設定を保存しました。</p></div>';
@@ -291,11 +305,24 @@ function gi_ai_settings_page() {
     // API接続テスト
     $connection_status = '';
     if (isset($_POST['test_connection']) && wp_verify_nonce($_POST['ai_settings_nonce'], 'gi_ai_settings')) {
-        $capabilities = gi_check_ai_capabilities();
-        if ($capabilities['openai_configured']) {
-            $connection_status = '<div class="notice notice-success"><p>✅ OpenAI APIへの接続が正常です！</p></div>';
+        // 新しいAI API Handlerを使用してテスト
+        if (class_exists('GI_AI_API_Handler')) {
+            $api_handler = gi_ai_get_api_handler();
+            $test_result = $api_handler->test_connection();
+            
+            if ($test_result['success']) {
+                $connection_status = '<div class="notice notice-success"><p>✅ OpenAI APIへの接続が成功しました！<br>' . esc_html($test_result['message']) . '</p></div>';
+            } else {
+                $connection_status = '<div class="notice notice-error"><p>❌ API接続テストが失敗しました: ' . esc_html($test_result['message']) . '</p></div>';
+            }
         } else {
-            $connection_status = '<div class="notice notice-error"><p>❌ OpenAI APIキーが設定されていないか、無効です。</p></div>';
+            // フォールバック: 旧システムを使用
+            $capabilities = gi_check_ai_capabilities();
+            if ($capabilities['openai_configured']) {
+                $connection_status = '<div class="notice notice-success"><p>✅ OpenAI APIへの接続が正常です！</p></div>';
+            } else {
+                $connection_status = '<div class="notice notice-error"><p>❌ OpenAI APIキーが設定されていないか、無効です。</p></div>';
+            }
         }
     }
     
@@ -308,7 +335,13 @@ function gi_ai_settings_page() {
     
     // OpenAI APIキーを取得
     $api_key = gi_get_openai_api_key();
-    $api_key_display = !empty($api_key) ? str_repeat('*', 20) . substr($api_key, -4) : '';
+    
+    // 新しいAPIハンドラーのマスク機能を使用
+    if (class_exists('GI_AI_API_Handler')) {
+        $api_key_display = GI_AI_API_Handler::get_masked_api_key();
+    } else {
+        $api_key_display = !empty($api_key) ? str_repeat('*', 20) . substr($api_key, -4) : '';
+    }
     ?>
     <div class="wrap">
         <h1>AI検索設定</h1>
