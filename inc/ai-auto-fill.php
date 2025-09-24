@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
     exit('Direct access denied.');
 }
 
+if (!class_exists('GI_AI_Auto_Fill')) {
 class GI_AI_Auto_Fill {
     
     private $api_handler;
@@ -1385,7 +1386,11 @@ class GI_AI_Auto_Fill {
     }
 }
 
+} // クラス定義終了
+
 // インスタンス化
 if (class_exists('GI_AI_Auto_Fill')) {
+    error_log('Initializing GI_AI_Auto_Fill instance');
     new GI_AI_Auto_Fill();
+    error_log('GI_AI_Auto_Fill instance created successfully');
 }

@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
     exit('Direct access denied.');
 }
 
+if (!class_exists('GI_AI_Admin_Interface')) {
 class GI_AI_Admin_Interface {
     
     private $field_definitions;
@@ -1488,7 +1489,11 @@ class GI_AI_Admin_Interface {
     }
 }
 
+} // クラス定義終了
+
 // インスタンス化
 if (class_exists('GI_AI_Admin_Interface')) {
+    error_log('Initializing GI_AI_Admin_Interface instance');
     new GI_AI_Admin_Interface();
+    error_log('GI_AI_Admin_Interface instance created successfully');
 }

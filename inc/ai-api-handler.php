@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
     exit('Direct access denied.');
 }
 
+if (!class_exists('GI_AI_API_Handler')) {
 class GI_AI_API_Handler {
     
     private $api_key;
@@ -1729,5 +1730,6 @@ if (class_exists('GI_AI_API_Handler')) {
         }
         return $instance;
     }
-}
+} // クラス定義終了
+} // if (!class_exists('GI_AI_API_Handler'))
 ?>

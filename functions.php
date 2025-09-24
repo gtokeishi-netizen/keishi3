@@ -47,12 +47,12 @@ $required_files = array(
 foreach ($required_files as $file) {
     $file_path = $inc_dir . $file;
     if (file_exists($file_path)) {
+        error_log('Loading file: ' . $file);
         require_once $file_path;
+        error_log('Loaded successfully: ' . $file);
     } else {
         // デバッグモードの場合はエラーログに記録
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('Grant Insight Theme: Required file not found - ' . $file_path);
-        }
+        error_log('Grant Insight Theme: Required file not found - ' . $file_path);
     }
 }
 
@@ -488,3 +488,59 @@ add_action('init', function() {
 /**
  * AJAXハンドラーの登録確認
  */
+
+// 一時的なデバッグ用 - 500エラー詳細表示
+if (!function_exists('gi_debug_ajax_500')) {
+    function gi_debug_ajax_500() {
+        // AJAX リクエストでエラーが発生した場合の詳細表示
+        add_action('wp_ajax_gi_ai_auto_fill', function() {
+            error_log('AJAX Handler gi_ai_auto_fill called');
+            
+            // エラー出力を有効化
+            ini_set('display_errors', 1);
+            ini_set('log_errors', 1);
+            error_reporting(E_ALL);
+            
+            // 元のハンドラーを呼び出す前にログ
+            if (class_exists('GI_AI_Auto_Fill')) {
+                error_log('GI_AI_Auto_Fill class exists');
+            } else {
+                error_log('GI_AI_Auto_Fill class NOT found');
+                wp_send_json_error('GI_AI_Auto_Fill class not found');
+            }
+        }, 5); // 優先度5で早期実行
+    }
+    gi_debug_ajax_500();
+}
+
+// AJAX処理のエラーキャッチ
+add_action('wp_ajax_gi_ai_auto_fill', function() {
+    if (!class_exists('GI_AI_Auto_Fill')) {
+        error_log('Error: GI_AI_Auto_Fill class not found in AJAX handler');
+        wp_send_json_error('AI自動入力クラスが見つかりません');
+        return;
+    }
+    
+    error_log('GI_AI_Auto_Fill class found, proceeding with AJAX request');
+}, 1);
+
+// クラスの存在確認とAJAXフック確認
+add_action('init', function() {
+    error_log('Classes check - GI_AI_Auto_Fill: ' . (class_exists('GI_AI_Auto_Fill') ? 'EXISTS' : 'NOT FOUND'));
+    error_log('Classes check - GI_AI_API_Handler: ' . (class_exists('GI_AI_API_Handler') ? 'EXISTS' : 'NOT FOUND'));
+    error_log('Classes check - GI_AI_Admin_Interface: ' . (class_exists('GI_AI_Admin_Interface') ? 'EXISTS' : 'NOT FOUND'));
+    
+    // AJAXフックの登録確認
+    global $wp_filter;
+    if (isset($wp_filter['wp_ajax_gi_ai_auto_fill'])) {
+        error_log('AJAX hook wp_ajax_gi_ai_auto_fill is registered');
+        error_log('Hook callbacks: ' . print_r($wp_filter['wp_ajax_gi_ai_auto_fill'], true));
+    } else {
+        error_log('AJAX hook wp_ajax_gi_ai_auto_fill is NOT registered');
+    }
+}, 25);
+
+// AJAX直前のデバッグ
+add_action('wp_ajax_gi_ai_auto_fill', function() {
+    error_log('AJAX gi_ai_auto_fill called - POST data: ' . print_r($_POST, true));
+}, 0); // 最高優先度で実行
