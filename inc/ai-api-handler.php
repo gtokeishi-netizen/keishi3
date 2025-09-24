@@ -275,6 +275,12 @@ class GI_AI_API_Handler {
             case 'deadline_note':
                 return $this->get_deadline_note_prompt($base_info);
                 
+            case 'post_title':
+                return $this->get_title_prompt($base_info);
+                
+            case 'post_content':
+                return $this->get_content_prompt($base_info);
+                
             default:
                 return false;
         }
@@ -1426,6 +1432,75 @@ class GI_AI_API_Handler {
                 'execution_time' => microtime(true) - $_SERVER['REQUEST_TIME_FLOAT']
             ));
         }
+    }
+    
+    /**
+     * タイトル生成プロンプト
+     * 
+     * @param array $base_info 基本情報
+     * @return string プロンプト
+     */
+    private function get_title_prompt($base_info) {
+        $info_text = implode("\n", $base_info);
+        
+        return "以下の助成金情報から、魅力的で分かりやすい投稿タイトルを生成してください：
+
+{$info_text}
+
+【要件】
+- 40文字以内で作成
+- 助成金の特徴を表現
+- SEOを意識したキーワードを含める
+- 読者の関心を引く表現
+- 「助成金」「補助金」などの単語を含める
+
+【出力例】
+「中小企業向け設備投資助成金 - 最大1000万円の支援制度」
+「創業支援補助金 - 新規事業立ち上げに最大500万円」
+
+タイトルのみを出力してください：";
+    }
+    
+    /**
+     * 本文生成プロンプト
+     * 
+     * @param array $base_info 基本情報
+     * @return string プロンプト
+     */
+    private function get_content_prompt($base_info) {
+        $info_text = implode("\n", $base_info);
+        
+        return "以下の助成金情報から、詳細で分かりやすい本文を生成してください：
+
+{$info_text}
+
+【要件】
+- 800-1200文字程度
+- HTMLタグ（p, h2, h3, ul, li, strong）を適切に使用
+- 読みやすい段落構成
+- 具体的で実用的な内容
+- 申請を促す前向きな表現
+
+【必須セクション】
+1. 制度の概要・目的
+2. 対象となる事業者・事業内容
+3. 助成金額・助成率
+4. 申請の流れ・スケジュール
+5. 注意事項・ポイント
+
+【出力例の構造】
+<h2>制度概要</h2>
+<p>この助成金は...</p>
+
+<h2>対象事業者</h2>
+<ul>
+<li>中小企業...</li>
+</ul>
+
+<h2>助成内容</h2>
+<p><strong>助成額:</strong> ...</p>
+
+本文のみを出力してください：";
     }
 }
 

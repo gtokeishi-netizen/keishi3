@@ -294,8 +294,16 @@ class GI_AI_Auto_Fill {
         // フィールド別処理
         foreach ($target_fields as $field_name) {
             try {
-                // 現在のフィールド値チェック
-                $current_value = get_field($field_name, $post_id);
+                // タイトル・本文フィールドの特別処理
+                if ($field_name === 'post_title') {
+                    $current_value = $post->post_title;
+                } elseif ($field_name === 'post_content') {
+                    $current_value = $post->post_content;
+                } else {
+                    // ACFフィールドの処理
+                    $current_value = get_field($field_name, $post_id);
+                }
+                
                 if (!empty($current_value) && trim(strip_tags($current_value)) !== '') {
                     continue; // 既に値が入力されている場合はスキップ
                 }
@@ -309,7 +317,23 @@ class GI_AI_Auto_Fill {
                     
                     if ($validation_result['valid']) {
                         // フィールドの更新
-                        update_field($field_name, $api_result['content'], $post_id);
+                        if ($field_name === 'post_title') {
+                            // タイトル更新
+                            wp_update_post(array(
+                                'ID' => $post_id,
+                                'post_title' => $api_result['content']
+                            ));
+                        } elseif ($field_name === 'post_content') {
+                            // 本文更新
+                            wp_update_post(array(
+                                'ID' => $post_id,
+                                'post_content' => $api_result['content']
+                            ));
+                        } else {
+                            // ACFフィールド更新
+                            update_field($field_name, $api_result['content'], $post_id);
+                        }
+                        
                         $updated_fields[$field_name] = $api_result['content'];
                         $total_tokens += $api_result['tokens_used'];
                     } else {

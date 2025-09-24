@@ -735,6 +735,153 @@ function gi_create_bulk_draft_posts($count, $title_template) {
 }
 
 /**
+ * テンプレート対応の一括下書き投稿作成
+ */
+function gi_create_bulk_draft_posts_with_template($count, $title_template, $template_type) {
+    $created_posts = array();
+    
+    // テンプレート定義
+    $templates = gi_get_post_templates();
+    $template_data = isset($templates[$template_type]) ? $templates[$template_type] : $templates['general'];
+    
+    for ($i = 1; $i <= $count; $i++) {
+        $title = str_replace('{number}', $i, $title_template);
+        
+        $post_data = array(
+            'post_title' => $title,
+            'post_content' => '',
+            'post_status' => 'draft',
+            'post_type' => 'grant',
+            'post_author' => get_current_user_id()
+        );
+        
+        $post_id = wp_insert_post($post_data);
+        
+        if ($post_id && !is_wp_error($post_id)) {
+            // テンプレートに基づいてメタフィールドを設定
+            foreach ($template_data['fields'] as $field_key => $field_value) {
+                update_post_meta($post_id, $field_key, $field_value);
+            }
+            
+            // ACFフィールド（存在する場合）
+            if (function_exists('update_field') && isset($template_data['acf_fields'])) {
+                foreach ($template_data['acf_fields'] as $field_key => $field_value) {
+                    update_field($field_key, $field_value, $post_id);
+                }
+            }
+            
+            $created_posts[] = $post_id;
+        }
+    }
+    
+    return $created_posts;
+}
+
+/**
+ * 投稿テンプレート定義
+ */
+function gi_get_post_templates() {
+    return array(
+        'general' => array(
+            'name' => '汎用助成金',
+            'fields' => array(
+                'grant_organization' => '経済産業省',
+                'max_amount' => '1000万円',
+                'grant_category' => '事業支援'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'normal',
+                'application_method' => 'online'
+            )
+        ),
+        'startup' => array(
+            'name' => '創業・起業支援',
+            'fields' => array(
+                'grant_organization' => '中小企業庁',
+                'max_amount' => '500万円',
+                'grant_category' => '創業支援'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'hard',
+                'application_method' => 'mixed'
+            )
+        ),
+        'equipment' => array(
+            'name' => '設備投資支援',
+            'fields' => array(
+                'grant_organization' => '経済産業省',
+                'max_amount' => '3000万円',
+                'grant_category' => '設備投資'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'normal',
+                'application_method' => 'online'
+            )
+        ),
+        'research' => array(
+            'name' => '研究開発支援',
+            'fields' => array(
+                'grant_organization' => '科学技術振興機構',
+                'max_amount' => '5000万円',
+                'grant_category' => '研究開発'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'expert',
+                'application_method' => 'mail'
+            )
+        ),
+        'employment' => array(
+            'name' => '雇用支援',
+            'fields' => array(
+                'grant_organization' => '厚生労働省',
+                'max_amount' => '200万円',
+                'grant_category' => '雇用支援'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'easy',
+                'application_method' => 'online'
+            )
+        ),
+        'environment' => array(
+            'name' => '環境・省エネ支援',
+            'fields' => array(
+                'grant_organization' => '環境省',
+                'max_amount' => '1500万円',
+                'grant_category' => '環境対策'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'normal',
+                'application_method' => 'mixed'
+            )
+        ),
+        'regional' => array(
+            'name' => '地域活性化',
+            'fields' => array(
+                'grant_organization' => '地方自治体',
+                'max_amount' => '800万円',
+                'grant_category' => '地域振興'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'easy',
+                'application_method' => 'visit'
+            )
+        ),
+        'digitization' => array(
+            'name' => 'DX・IT導入支援',
+            'fields' => array(
+                'grant_organization' => 'デジタル庁',
+                'max_amount' => '1200万円',
+                'grant_category' => 'デジタル化'
+            ),
+            'acf_fields' => array(
+                'grant_difficulty' => 'normal',
+                'application_method' => 'online'
+            )
+        )
+    );
+}
+
+/**
  * AI一括処理ページ
  */
 function gi_ai_batch_processing_page() {
@@ -760,14 +907,41 @@ function gi_ai_batch_processing_page() {
         }
     }
     
+    // 一括設定適用処理
+    if (isset($_POST['apply_bulk_settings']) && wp_verify_nonce($_POST['gi_bulk_settings_nonce'], 'gi_bulk_settings')) {
+        $bulk_posts = isset($_POST['bulk_setting_posts']) ? $_POST['bulk_setting_posts'] : array();
+        
+        if (!empty($bulk_posts)) {
+            $settings = array(
+                'grant_organization' => sanitize_text_field($_POST['bulk_organization'] ?? ''),
+                'max_amount' => sanitize_text_field($_POST['bulk_max_amount'] ?? ''),
+                'application_deadline' => sanitize_text_field($_POST['bulk_application_deadline'] ?? ''),
+                'grant_url' => esc_url_raw($_POST['bulk_grant_url'] ?? '')
+            );
+            
+            $updated_count = 0;
+            foreach ($bulk_posts as $post_id) {
+                foreach ($settings as $meta_key => $meta_value) {
+                    if (!empty($meta_value)) {
+                        update_post_meta($post_id, $meta_key, $meta_value);
+                    }
+                }
+                $updated_count++;
+            }
+            
+            echo '<div class="notice notice-success"><p>' . $updated_count . '件の投稿に設定を適用しました。</p></div>';
+        }
+    }
+    
     // 一括投稿作成処理
     if (isset($_POST['create_bulk_posts']) && wp_verify_nonce($_POST['gi_bulk_create_nonce'], 'gi_bulk_create')) {
         $post_count = intval($_POST['post_count']);
         $post_title_template = sanitize_text_field($_POST['post_title_template']);
+        $post_template = sanitize_text_field($_POST['post_template'] ?? 'general');
         
         if ($post_count > 0 && $post_count <= 100) {
-            $created_posts = gi_create_bulk_draft_posts($post_count, $post_title_template);
-            echo '<div class="notice notice-success"><p>' . count($created_posts) . '件の下書き投稿を作成しました。</p></div>';
+            $created_posts = gi_create_bulk_draft_posts_with_template($post_count, $post_title_template, $post_template);
+            echo '<div class="notice notice-success"><p>' . count($created_posts) . '件の下書き投稿を作成しました（テンプレート: ' . $post_template . '）。</p></div>';
         }
     }
     
@@ -782,6 +956,8 @@ function gi_ai_batch_processing_page() {
     
     // フィールド定義
     $available_fields = array(
+        'post_title' => '投稿タイトル',
+        'post_content' => '投稿本文',
         'ai_summary' => 'AI概要',
         'grant_target' => '対象者・対象事業',
         'eligible_expenses' => '対象経費',
@@ -805,6 +981,25 @@ function gi_ai_batch_processing_page() {
                 <?php wp_nonce_field('gi_bulk_create', 'gi_bulk_create_nonce'); ?>
                 
                 <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="post_template">投稿テンプレート</label>
+                        </th>
+                        <td>
+                            <select id="post_template" name="post_template">
+                                <option value="general">汎用助成金</option>
+                                <option value="startup">創業・起業支援</option>
+                                <option value="equipment">設備投資支援</option>
+                                <option value="research">研究開発支援</option>
+                                <option value="employment">雇用支援</option>
+                                <option value="environment">環境・省エネ支援</option>
+                                <option value="regional">地域活性化</option>
+                                <option value="digitization">DX・IT導入支援</option>
+                            </select>
+                            <p class="description">選択したテンプレートに応じて、最適化されたフィールド値が事前設定されます</p>
+                        </td>
+                    </tr>
+                    
                     <tr>
                         <th scope="row">
                             <label for="post_count">作成する投稿数</label>
@@ -840,6 +1035,63 @@ function gi_ai_batch_processing_page() {
         
         <hr>
         
+        <!-- 一括設定適用セクション -->
+        <div class="gi-batch-section">
+            <h2>⚙️ 一括設定適用</h2>
+            <form method="post" action="">
+                <?php wp_nonce_field('gi_bulk_settings', 'gi_bulk_settings_nonce'); ?>
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">基本情報一括設定</th>
+                        <td>
+                            <fieldset>
+                                <p>選択した投稿に共通の基本情報を一括設定します：</p>
+                                
+                                <label for="bulk_organization">実施組織:</label><br>
+                                <input type="text" id="bulk_organization" name="bulk_organization" class="regular-text" 
+                                       placeholder="例: 経済産業省" /><br><br>
+                                
+                                <label for="bulk_max_amount">最大助成額:</label><br>
+                                <input type="text" id="bulk_max_amount" name="bulk_max_amount" class="regular-text" 
+                                       placeholder="例: 1000万円" /><br><br>
+                                
+                                <label for="bulk_application_deadline">申請期限:</label><br>
+                                <input type="text" id="bulk_application_deadline" name="bulk_application_deadline" class="regular-text" 
+                                       placeholder="例: 2025年3月31日" /><br><br>
+                                
+                                <label for="bulk_grant_url">公式URL:</label><br>
+                                <input type="url" id="bulk_grant_url" name="bulk_grant_url" class="regular-text" 
+                                       placeholder="https://example.com" />
+                            </fieldset>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">対象投稿選択</th>
+                        <td>
+                            <div id="bulk-settings-posts" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px;">
+                                <?php foreach ($grant_posts as $post): ?>
+                                    <label>
+                                        <input type="checkbox" name="bulk_setting_posts[]" value="<?php echo $post->ID; ?>" />
+                                        <?php echo esc_html($post->post_title ?: '（タイトル未設定 - ID: ' . $post->ID . '）'); ?>
+                                    </label><br>
+                                <?php endforeach; ?>
+                            </div>
+                            <p>
+                                <button type="button" id="select-all-bulk" class="button button-secondary">全選択</button>
+                                <button type="button" id="select-none-bulk" class="button button-secondary">全解除</button>
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <?php submit_button('選択した投稿に設定を適用', 'secondary', 'apply_bulk_settings'); ?>
+            </form>
+        </div>
+        
+        <hr>
+        
         <!-- バッチ処理セクション -->
         <div class="gi-batch-section">
             <h2>🤖 AI一括処理</h2>
@@ -860,7 +1112,7 @@ function gi_ai_batch_processing_page() {
                                 <input type="checkbox" 
                                        name="selected_fields[]" 
                                        value="<?php echo esc_attr($field_key); ?>"
-                                       <?php checked(in_array($field_key, array('ai_summary', 'grant_target', 'eligible_expenses'))); ?> />
+                                       <?php checked(in_array($field_key, array('post_title', 'post_content', 'ai_summary', 'grant_target'))); ?> />
                                 <?php echo esc_html($field_name); ?>
                             </label><br>
                         <?php endforeach; ?>
@@ -1003,6 +1255,15 @@ function gi_ai_batch_processing_page() {
         
         // 初期カウント
         updateSelectedCount();
+        
+        // 一括設定の全選択/全解除
+        $('#select-all-bulk').click(function() {
+            $('input[name="bulk_setting_posts[]"]').prop('checked', true);
+        });
+        
+        $('#select-none-bulk').click(function() {
+            $('input[name="bulk_setting_posts[]"]').prop('checked', false);
+        });
         
         // バッチ処理フォーム送信
         $('#gi-batch-form').submit(function(e) {
