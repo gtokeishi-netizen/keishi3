@@ -290,7 +290,12 @@ class GI_AI_Auto_Fill {
             $result = $this->execute_ai_fill($post_id, $target_fields);
             $processing_time = microtime(true) - $start_time;
             
-            error_log('AI Auto Fill: Processing completed. Result: ' . print_r($result, true));
+            error_log('AI Auto Fill: Processing completed. Result type: ' . gettype($result));
+            if (is_array($result)) {
+                error_log('AI Auto Fill: Result details: ' . print_r($result, true));
+            } else {
+                error_log('AI Auto Fill: Result value: ' . var_export($result, true));
+            }
             
             if ($result['success']) {
                 // 使用ログの記録
@@ -378,16 +383,41 @@ class GI_AI_Auto_Fill {
      * AI処理の実行
      */
     private function execute_ai_fill($post_id, $target_fields) {
-        $post = get_post($post_id);
-        $updated_fields = array();
-        $total_tokens = 0;
-        $errors = array();
-        
-        // 投稿データの収集
-        $post_data = $this->collect_post_data($post_id);
-        
-        // バックアップの作成
-        $this->create_backup($post_id, $target_fields);
+        try {
+            error_log('AI Auto Fill: execute_ai_fill started for post_id=' . $post_id);
+            
+            $post = get_post($post_id);
+            if (!$post) {
+                return array(
+                    'success' => false,
+                    'updated_fields' => array(),
+                    'errors' => array('general' => '投稿が見つかりません'),
+                    'total_tokens' => 0,
+                    'message' => '投稿が見つかりません'
+                );
+            }
+            
+            $updated_fields = array();
+            $total_tokens = 0;
+            $errors = array();
+            
+            // 投稿データの収集
+            error_log('AI Auto Fill: Collecting post data');
+            $post_data = $this->collect_post_data($post_id);
+            if (!is_array($post_data)) {
+                $errors['general'] = '投稿データの収集に失敗しました';
+                return array(
+                    'success' => false,
+                    'updated_fields' => array(),
+                    'errors' => $errors,
+                    'total_tokens' => 0,
+                    'message' => '投稿データの収集に失敗しました'
+                );
+            }
+            
+            // バックアップの作成
+            error_log('AI Auto Fill: Creating backup');
+            $this->create_backup($post_id, $target_fields);
         
         // フィールド別処理
         foreach ($target_fields as $field_name) {
@@ -399,7 +429,11 @@ class GI_AI_Auto_Fill {
                     $current_value = $post->post_content;
                 } else {
                     // ACFフィールドの処理
-                    $current_value = get_field($field_name, $post_id);
+                    if (function_exists('get_field')) {
+                        $current_value = get_field($field_name, $post_id);
+                    } else {
+                        $current_value = get_post_meta($post_id, $field_name, true);
+                    }
                 }
                 
                 // 【重要変更】既に値が入力されている場合もスキップしない - 再生成を可能にする
@@ -429,7 +463,11 @@ class GI_AI_Auto_Fill {
                             ));
                         } else {
                             // ACFフィールド更新
-                            update_field($field_name, $api_result['content'], $post_id);
+                            if (function_exists('update_field')) {
+                                update_field($field_name, $api_result['content'], $post_id);
+                            } else {
+                                update_post_meta($post_id, $field_name, $api_result['content']);
+                            }
                         }
                         
                         $updated_fields[$field_name] = $api_result['content'];
@@ -451,16 +489,29 @@ class GI_AI_Auto_Fill {
             }
         }
         
-        // 結果の判定
-        $success = !empty($updated_fields);
-        
-        return array(
-            'success' => $success,
-            'updated_fields' => $updated_fields,
-            'errors' => $errors,
-            'total_tokens' => $total_tokens,
-            'message' => $success ? '処理完了' : '処理に失敗しました: ' . implode(', ', $errors)
-        );
+            // 結果の判定
+            $success = !empty($updated_fields);
+            
+            error_log('AI Auto Fill: execute_ai_fill completed. Success: ' . ($success ? 'true' : 'false') . ', Updated fields: ' . count($updated_fields));
+            
+            return array(
+                'success' => $success,
+                'updated_fields' => $updated_fields,
+                'errors' => $errors,
+                'total_tokens' => $total_tokens,
+                'message' => $success ? '処理完了' : '処理に失敗しました: ' . implode(', ', $errors)
+            );
+            
+        } catch (Exception $e) {
+            error_log('AI Auto Fill: Exception in execute_ai_fill: ' . $e->getMessage() . ' at ' . $e->getFile() . ':' . $e->getLine());
+            return array(
+                'success' => false,
+                'updated_fields' => array(),
+                'errors' => array('exception' => 'AI処理でエラーが発生しました: ' . $e->getMessage()),
+                'total_tokens' => 0,
+                'message' => 'AI処理でエラーが発生しました: ' . $e->getMessage()
+            );
+        }
     }
     
     /**
@@ -468,7 +519,14 @@ class GI_AI_Auto_Fill {
      * 既存フィールドの内容をコンテキストとして収集し、AIにより良い生成の根拠を提供
      */
     private function collect_post_data($post_id) {
-        $post = get_post($post_id);
+        try {
+            error_log('AI Auto Fill: collect_post_data started for post_id=' . $post_id);
+            
+            $post = get_post($post_id);
+            if (!$post) {
+                error_log('AI Auto Fill: Post not found in collect_post_data');
+                return false;
+            }
         
         $data = array(
             'title' => $post->post_title,
@@ -490,10 +548,22 @@ class GI_AI_Auto_Fill {
             'target_region' => 'target_region'
         );
         
-        foreach ($acf_fields as $key => $field_name) {
-            $value = get_field($field_name, $post_id);
-            if ($value) {
-                $data[$key] = $value;
+        // ACF関数の存在確認
+        if (function_exists('get_field')) {
+            foreach ($acf_fields as $key => $field_name) {
+                $value = get_field($field_name, $post_id);
+                if ($value) {
+                    $data[$key] = $value;
+                }
+            }
+        } else {
+            error_log('AI Auto Fill: ACF get_field function not available');
+            // ACFが無効の場合はカスタムフィールドから取得を試行
+            foreach ($acf_fields as $key => $field_name) {
+                $value = get_post_meta($post_id, $field_name, true);
+                if ($value) {
+                    $data[$key] = $value;
+                }
             }
         }
         
@@ -512,7 +582,13 @@ class GI_AI_Auto_Fill {
         
         $existing_content = array();
         foreach ($ai_target_fields as $field_name => $field_label) {
-            $value = get_field($field_name, $post_id);
+            // ACF関数が利用可能かチェック
+            if (function_exists('get_field')) {
+                $value = get_field($field_name, $post_id);
+            } else {
+                $value = get_post_meta($post_id, $field_name, true);
+            }
+            
             if (!empty($value) && trim(strip_tags($value)) !== '') {
                 $existing_content[$field_name] = array(
                     'label' => $field_label,
@@ -521,12 +597,18 @@ class GI_AI_Auto_Fill {
             }
         }
         
-        // 既存コンテンツをデータに追加
-        if (!empty($existing_content)) {
-            $data['existing_ai_content'] = $existing_content;
+            // 既存コンテンツをデータに追加
+            if (!empty($existing_content)) {
+                $data['existing_ai_content'] = $existing_content;
+            }
+            
+            error_log('AI Auto Fill: collect_post_data completed successfully');
+            return $data;
+            
+        } catch (Exception $e) {
+            error_log('AI Auto Fill: Exception in collect_post_data: ' . $e->getMessage());
+            return false;
         }
-        
-        return $data;
     }
     
     /**
