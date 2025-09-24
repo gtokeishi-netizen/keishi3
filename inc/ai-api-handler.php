@@ -27,14 +27,38 @@ class GI_AI_API_Handler {
      */
     public function __construct() {
         $this->api_key = $this->get_decrypted_api_key();
-        $this->max_tokens = get_option('gi_ai_max_tokens', 1000);
-        $this->temperature = get_option('gi_ai_temperature', 0.7);
-        $this->retry_count = get_option('gi_ai_retry_count', 3);
-        $this->timeout = get_option('gi_ai_timeout', 30);
+        
+        // 設定値の取得と型変換、デフォルト値の保証
+        $this->max_tokens = max(1, intval(get_option('gi_ai_max_tokens', 1000)));
+        $this->temperature = max(0.0, min(2.0, floatval(get_option('gi_ai_temperature', 0.7))));
+        $this->retry_count = max(1, intval(get_option('gi_ai_retry_count', 3)));
+        $this->timeout = max(5, intval(get_option('gi_ai_timeout', 30)));
+        
+        // デフォルト値が設定されていない場合は保存
+        $this->init_default_options();
         
         // APIキーの検証
         if (empty($this->api_key)) {
             add_action('admin_notices', array($this, 'api_key_missing_notice'));
+        }
+    }
+    
+    /**
+     * デフォルトオプションの初期化
+     */
+    private function init_default_options() {
+        $defaults = array(
+            'gi_ai_max_tokens' => 1000,
+            'gi_ai_temperature' => 0.7,
+            'gi_ai_retry_count' => 3,
+            'gi_ai_timeout' => 30,
+            'gi_ai_daily_limit' => 100
+        );
+        
+        foreach ($defaults as $option_name => $default_value) {
+            if (get_option($option_name) === false) {
+                update_option($option_name, $default_value);
+            }
         }
     }
     
@@ -585,7 +609,13 @@ class GI_AI_API_Handler {
         return array(
             'success' => false,
             'error' => "API呼び出しに失敗しました (試行回数: {$this->retry_count}): " . $last_error,
-            'tokens_used' => 0
+            'tokens_used' => 0,
+            'debug_info' => array(
+                'retry_count' => $this->retry_count,
+                'api_key_set' => !empty($this->api_key),
+                'api_endpoint' => $this->api_endpoint,
+                'last_error' => $last_error
+            )
         );
     }
     
@@ -813,10 +843,28 @@ class GI_AI_API_Handler {
      * @return array テスト結果
      */
     public function test_connection() {
+        // 詳細な診断情報を含む
+        $diagnostics = array(
+            'api_key_length' => strlen($this->api_key ?? ''),
+            'api_key_format' => !empty($this->api_key) && strpos($this->api_key, 'sk-') === 0,
+            'retry_count' => $this->retry_count,
+            'timeout' => $this->timeout,
+            'endpoint' => $this->api_endpoint
+        );
+        
         if (empty($this->api_key)) {
             return array(
                 'success' => false,
-                'message' => 'APIキーが設定されていません。'
+                'message' => 'APIキーが設定されていません。設定画面でOpenAI APIキーを入力してください。',
+                'diagnostics' => $diagnostics
+            );
+        }
+        
+        if (strlen($this->api_key) < 20 || strpos($this->api_key, 'sk-') !== 0) {
+            return array(
+                'success' => false,
+                'message' => 'APIキーの形式が正しくありません。OpenAI APIキーは "sk-" で始まる必要があります。',
+                'diagnostics' => $diagnostics
             );
         }
         
@@ -830,12 +878,14 @@ class GI_AI_API_Handler {
         if ($result['success']) {
             return array(
                 'success' => true,
-                'message' => 'API接続テストが成功しました。使用トークン数: ' . $result['tokens_used']
+                'message' => 'API接続テストが成功しました。使用トークン数: ' . $result['tokens_used'],
+                'diagnostics' => $diagnostics
             );
         } else {
             return array(
                 'success' => false,
-                'message' => 'API接続テストが失敗しました: ' . $result['error']
+                'message' => 'API接続テストが失敗しました: ' . $result['error'],
+                'diagnostics' => array_merge($diagnostics, $result['debug_info'] ?? array())
             );
         }
     }
